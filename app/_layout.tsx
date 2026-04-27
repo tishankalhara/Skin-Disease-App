@@ -1,24 +1,62 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { Stack } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import 'react-native-reanimated';
+import { Stack, useRouter, useSegments } from 'expo-router';
+import { createContext, useContext, useEffect, useState } from 'react';
 
-import { useColorScheme } from '@/hooks/use-color-scheme';
+// --- AUTH CONTEXT ---
+const AuthContext = createContext<any>(null);
+export const useAuth = () => useContext(AuthContext);
 
-export const unstable_settings = {
-  anchor: '(tabs)',
-};
+// --- NEW: THEME CONTEXT FOR DARK MODE ---
+const ThemeContext = createContext<any>(null);
+export const useTheme = () => useContext(ThemeContext);
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
+  const [role, setRole] = useState<'guest' | 'user' | 'admin'>('guest');
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isReady, setIsReady] = useState(false);
+  
+  // New state for Dark Mode
+  const [isDark, setIsDark] = useState(false);
+
+  const segments = useSegments();
+  const router = useRouter();
+
+  useEffect(() => {
+    setIsReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isReady) return; 
+
+    const inAuthGroup = segments[0] === '(auth)';
+
+    if (!isLoggedIn && !inAuthGroup) {
+      router.replace('/(auth)/onboarding' as any);
+    } else if (isLoggedIn && inAuthGroup) {
+      const path = role === 'admin' ? '/(admin)/dashboard' : '/(user)/(tabs)';
+      router.replace(path as any);
+    }
+  }, [isLoggedIn, role, segments, isReady]);
+
+  // Function to switch themes
+  const toggleTheme = () => setIsDark(!isDark);
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-      </Stack>
-      <StatusBar style="auto" />
-    </ThemeProvider>
+    // 1. Wrapping with ThemeContext first
+    <ThemeContext.Provider value={{ isDark, toggleTheme }}>
+      {/* 2. Keeping your AuthContext exactly as it was */}
+      <AuthContext.Provider value={{ 
+          role, 
+          isLoggedIn, 
+          login: (r: any) => { setRole(r); setIsLoggedIn(true); },
+          logout: () => { setRole('guest'); setIsLoggedIn(false); } 
+      }}>
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="index" />
+          <Stack.Screen name="(auth)" />
+          <Stack.Screen name="(user)/(tabs)" />
+          <Stack.Screen name="(admin)" />
+        </Stack>
+      </AuthContext.Provider>
+    </ThemeContext.Provider>
   );
 }
