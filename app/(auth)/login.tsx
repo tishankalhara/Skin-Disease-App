@@ -1,4 +1,5 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import { ActivityIndicator, Alert, SafeAreaView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
@@ -38,6 +39,7 @@ export default function LoginScreen() {
       if (response.ok) {
         
         login(data.role); 
+      await AsyncStorage.setItem('userEmail', email);  
       } else {
         Alert.alert("Login Failed", data.detail || "Invalid email or password");
       }
