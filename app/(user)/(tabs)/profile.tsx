@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { 
   View, 
   Text, 
@@ -9,18 +9,41 @@ import {
   Platform,
   Image,
   Switch,
-  Alert
+  Alert,
+  Modal,
+  TextInput,
+  ActivityIndicator
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import Constants from 'expo-constants';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../../_layout'; 
+
+
+const BACKEND_BASE_URL = 'http://192.168.8.61:8000'; 
 
 export default function ProfileScreen() {
   const router = useRouter();
   const { logout } = useAuth();
 
-  // State for the Preference toggles
+  // --- STATE VARIABLES ---
+  const [loading, setLoading] = useState(true);
+  const [userEmail, setUserEmail] = useState('');
+  const [userName, setUserName] = useState('');
+  const [profilePic, setProfilePic] = useState<string | null>(null);
+
+  const [isEditModalVisible, setEditModalVisible] = useState(false);
+  const [isHelpModalVisible, setHelpModalVisible] = useState(false);
+  const [isTermsModalVisible, setTermsModalVisible] = useState(false);
+  const [editAgeInput, setEditAgeInput] = useState('');   
+  const [editGenderInput, setEditGenderInput] = useState(''); 
+  const [editLocationInput, setEditLocationInput] = useState(''); 
+  const [isSecurityModalVisible, setSecurityModalVisible] = useState(false);
+  const [editNameInput, setEditNameInput] = useState('');
+  const [saving, setSaving] = useState(false);
+
   const [isNotificationsEnabled, setIsNotificationsEnabled] = useState(true);
   const [isDarkModeEnabled, setIsDarkModeEnabled] = useState(false);
 
@@ -31,15 +54,90 @@ export default function ProfileScreen() {
   const themeSubText = isDarkModeEnabled ? '#A0A0A0' : '#64748B';
   const themeBorder = isDarkModeEnabled ? '#333333' : '#F1F5F9';
 
-  const handleClearHistory = () => {
-    Alert.alert(
-      "Clear All History",
-      "Are you sure you want to delete all saved screenings? This action cannot be undone.",
-      [
-        { text: "Cancel", style: "cancel" },
-        { text: "Delete All", style: "destructive", onPress: () => console.log("History Cleared") }
-      ]
-    );
+  // --- LOAD USER PROFILE ---
+  useFocusEffect(
+    useCallback(() => {
+      loadUserProfile();
+    }, [])
+  );
+
+  const loadUserProfile = async () => {
+    try {
+      setLoading(true);
+      const email = await AsyncStorage.getItem('userEmail');
+      if (!email) {
+        logout(); 
+        return;
+      }
+      setUserEmail(email);
+
+      const response = await fetch(`${BACKEND_BASE_URL}/user/${email}`);
+      const data = await response.json();
+      
+      if (response.ok) {
+        setUserName(data.full_name || 'User');
+        setEditNameInput(data.full_name || 'User');
+        setEditAgeInput(data.age || '');
+        setEditGenderInput(data.gender || '');
+        setEditLocationInput(data.location || '');
+
+        if (data.profile_pic) {
+          setProfilePic(data.profile_pic);
+        }
+      }
+    } catch (error) {
+      console.error("Profile Load Error", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // --- UPDATE PROFILE (PIC & NAME) ---
+  const pickImage = async () => {
+    let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.5,
+      base64: true,
+    });
+
+    if (!result.canceled && result.assets[0].base64) {
+      const base64Image = `data:image/jpeg;base64,${result.assets[0].base64}`;
+      setProfilePic(base64Image);
+      saveProfileChanges(userName, base64Image);
+    }
+  };
+
+  const saveProfileChanges = async (newName: string, newPic: string | null) => {
+    try {
+      setSaving(true);
+      await fetch(`${BACKEND_BASE_URL}/user/${userEmail}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ full_name: newName, profile_pic: newPic, age: editAgeInput, 
+          gender: editGenderInput, 
+          location: editLocationInput })
+      });
+      setUserName(newName);
+      setEditModalVisible(false);
+    } catch (error) {
+      Alert.alert("Error", "Could not update profile.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // --- DELETE ACCOUNT ---
+  const handleDeleteAccount = () => {
+    Alert.alert("WARNING!", "This will permanently delete your account and all history. Continue?", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: async () => {
+          await fetch(`${BACKEND_BASE_URL}/user/${userEmail}`, { method: 'DELETE' });
+          await AsyncStorage.removeItem('userEmail');
+          logout();
+      }}
+    ]);
   };
 
   // Helper component for Profile Menu Items
@@ -59,6 +157,10 @@ export default function ProfileScreen() {
     </TouchableOpacity>
   );
 
+  if (loading) {
+    return <View style={[styles.container, {justifyContent: 'center', alignItems: 'center', backgroundColor: themeContainer}]}><ActivityIndicator size="large" color="#1976D2" /></View>;
+  }
+
   return (
     <View style={[styles.container, { backgroundColor: themeContainer }]}>
       <StatusBar barStyle="light-content" backgroundColor="#1976D2" />
@@ -67,29 +169,22 @@ export default function ProfileScreen() {
       <View style={styles.header}>
         <Text style={styles.headerTitle}>My Profile</Text>
         <View style={styles.profileInfo}>
-          <View style={styles.avatarContainer}>
-            <MaterialCommunityIcons name="account" size={50} color="#1976D2" />
-            <TouchableOpacity style={styles.editBadge}>
+          <TouchableOpacity onPress={pickImage} style={styles.avatarContainer}>
+            {profilePic ? (
+              <Image source={{ uri: profilePic }} style={{width: 90, height: 90, borderRadius: 45}} />
+            ) : (
+              <MaterialCommunityIcons name="account" size={50} color="#1976D2" />
+            )}
+            <View style={styles.editBadge}>
               <MaterialCommunityIcons name="camera" size={14} color="white" />
-            </TouchableOpacity>
-          </View>
-          <Text style={styles.userName}>Tishan Kalhara</Text>
-          <Text style={styles.userEmail}>tishan@gmail.com</Text>
+            </View>
+          </TouchableOpacity>
+          <Text style={styles.userName}>{userName}</Text>
+          <Text style={styles.userEmail}>{userEmail}</Text>
         </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        
-        {/* NEW FEATURE: Clear All History Action */}
-        <View style={[styles.menuGroup, { backgroundColor: themeCard, borderColor: themeBorder }]}>
-          <MenuItem 
-            icon="delete-sweep-outline" 
-            title="Clear All History" 
-            subtitle="Delete all saved screenings"
-            color="#D32F2F"
-            onPress={handleClearHistory}
-          />
-        </View>
 
         {/* 2. Account Settings Group */}
         <Text style={styles.sectionLabel}>Account Settings</Text>
@@ -97,18 +192,20 @@ export default function ProfileScreen() {
           <MenuItem 
             icon="account-edit-outline" 
             title="Edit Profile" 
-            subtitle="Change name, email, and photo"
+            subtitle="Change name and photo"
             color="#1976D2"
+            onPress={() => setEditModalVisible(true)}
           />
           <MenuItem 
-            icon="shield-check-outline" 
-            title="Privacy & Security" 
-            subtitle="Manage your data and password"
-            color="#2E7D32"
-          />
+          icon="shield-check-outline" 
+          title="Privacy & Security" 
+          subtitle="Password and account controls"
+          color="#2E7D32"
+          onPress={() => setSecurityModalVisible(true)} 
+        />
         </View>
 
-        {/* NEW FEATURE: Preferences Group (Notifications & Dark Mode) */}
+        {/* 3. Preferences Group (Notifications & Dark Mode) */}
         <Text style={styles.sectionLabel}>Preferences</Text>
         <View style={[styles.menuGroup, { backgroundColor: themeCard, borderColor: themeBorder }]}>
           {/* Notifications Toggle */}
@@ -127,7 +224,7 @@ export default function ProfileScreen() {
             />
           </View>
 
-          {/* Dark Mode Toggle - Now Fully Functional */}
+          {/* Dark Mode Toggle */}
           <View style={[styles.preferenceRow, { borderTopWidth: 1, borderTopColor: themeBorder }]}>
             <View style={[styles.iconBg, { backgroundColor: '#1E293B15' }]}>
               <MaterialCommunityIcons 
@@ -148,19 +245,23 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        {/* 3. Support & More Group */}
+        {/* 4. Support & More Group */}
         <Text style={styles.sectionLabel}>Support & Legal</Text>
         <View style={[styles.menuGroup, { backgroundColor: themeCard, borderColor: themeBorder }]}>
           <MenuItem 
-            icon="help-circle-outline" 
-            title="Help Center" 
-            color="#64748B"
-          />
-          <MenuItem 
-            icon="file-document-outline" 
-            title="Terms & Conditions" 
-            color="#64748B"
-          />
+          icon="help-circle-outline" 
+          title="Help Center" 
+          subtitle="FAQs and contact support" 
+          color="#64748B"
+          onPress={() => setHelpModalVisible(true)} 
+        />
+        <MenuItem 
+          icon="file-document-outline" 
+          title="Terms & Privacy" 
+          subtitle="Medical disclaimers and policies"
+          color="#64748B"
+          onPress={() => setTermsModalVisible(true)} 
+        />
           <MenuItem 
             icon="information-outline" 
             title="About SkinCheck AI" 
@@ -169,7 +270,7 @@ export default function ProfileScreen() {
           />
         </View>
 
-        {/* 4. Logout Button */}
+        {/* 5. Logout Button*/}
         <TouchableOpacity style={styles.logoutBtn} onPress={logout}>
           <MaterialCommunityIcons name="logout" size={22} color="#D32F2F" />
           <Text style={styles.logoutText}>Sign Out</Text>
@@ -177,7 +278,168 @@ export default function ProfileScreen() {
 
       </ScrollView>
 
-      {/* 5. Bottom Tab Bar */}
+      {/* EDIT PROFILE MODAL */}
+      <Modal visible={isEditModalVisible} animationType="slide" transparent={true}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContainer, { backgroundColor: themeCard }]}>
+            <Text style={[styles.modalTitle, { color: themeText }]}>Edit Profile</Text>
+
+            <ScrollView showsVerticalScrollIndicator={false}>
+             <Text style={[styles.inputLabel, { color: themeSubText }]}>Full Name</Text>
+            <TextInput 
+              style={[styles.textInput, { backgroundColor: themeContainer, color: themeText, borderColor: themeBorder }]}
+              value={editNameInput}
+              onChangeText={setEditNameInput}
+              placeholder="Enter your name"
+              placeholderTextColor={themeSubText}
+            />
+            <Text style={[styles.inputLabel, { color: themeSubText }]}>Age</Text>
+              <TextInput 
+                style={[styles.textInput, { backgroundColor: themeContainer, color: themeText, borderColor: themeBorder }]}
+                value={editAgeInput}
+                onChangeText={setEditAgeInput}
+                keyboardType="numeric"
+                placeholder="e.g. 25"
+                placeholderTextColor={themeSubText}
+              />
+
+              <Text style={[styles.inputLabel, { color: themeSubText }]}>Gender</Text>
+              <TextInput 
+                style={[styles.textInput, { backgroundColor: themeContainer, color: themeText, borderColor: themeBorder }]}
+                value={editGenderInput}
+                onChangeText={setEditGenderInput}
+                placeholder="Male / Female / Other"
+                placeholderTextColor={themeSubText}
+              />
+
+              <Text style={[styles.inputLabel, { color: themeSubText }]}>Location (City)</Text>
+              <TextInput 
+                style={[styles.textInput, { backgroundColor: themeContainer, color: themeText, borderColor: themeBorder, marginBottom: 20 }]}
+                value={editLocationInput}
+                onChangeText={setEditLocationInput}
+                placeholder="e.g. Colombo"
+                placeholderTextColor={themeSubText}
+              />
+            </ScrollView>
+
+            <TouchableOpacity 
+              style={styles.saveBtn} 
+              onPress={() => saveProfileChanges(editNameInput, profilePic)}
+              disabled={saving}
+            >
+              <Text style={styles.saveBtnText}>{saving ? "Saving..." : "Save Changes"}</Text>
+            </TouchableOpacity>
+
+            
+
+            <TouchableOpacity style={styles.cancelBtn} onPress={() => setEditModalVisible(false)}>
+              <Text style={[styles.cancelBtnText, { color: themeSubText }]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+{/* PRIVACY & SECURITY MODAL*/}
+      <Modal visible={isSecurityModalVisible} animationType="slide" transparent={true}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContainer, { backgroundColor: themeCard }]}>
+            <Text style={[styles.modalTitle, { color: themeText, marginBottom: 10 }]}>Privacy & Security</Text>
+            
+            <Text style={[styles.sectionLabel, { marginBottom: 15, marginTop: 10 }]}>Security Settings</Text>
+
+            {/* Change Password Button */}
+            <TouchableOpacity 
+              style={[styles.menuItem, { borderBottomWidth: 0, paddingHorizontal: 0 }]} 
+              onPress={() => Alert.alert("Change Password", "A password reset instruction will be sent to your registered email.")}
+            >
+              <View style={[styles.iconBg, { backgroundColor: '#1976D215' }]}>
+                <MaterialCommunityIcons name="lock-reset" size={22} color="#1976D2" />
+              </View>
+              <View style={styles.menuText}>
+                <Text style={[styles.menuTitle, { color: themeText }]}>Change Password</Text>
+                <Text style={[styles.menuSubtitle, { color: themeSubText }]}>Update your account password</Text>
+              </View>
+              <MaterialCommunityIcons name="chevron-right" size={20} color={themeSubText} />
+            </TouchableOpacity>
+
+            {/* Data Management Button */}
+            <TouchableOpacity 
+              style={[styles.menuItem, { borderBottomWidth: 0, paddingHorizontal: 0 }]} 
+              onPress={() => Alert.alert("Data Privacy", "Your scan records are encrypted and stored securely in compliance with privacy guidelines.")}
+            >
+              <View style={[styles.iconBg, { backgroundColor: '#2E7D3215' }]}>
+                <MaterialCommunityIcons name="database-lock-outline" size={22} color="#2E7D32" />
+              </View>
+              <View style={styles.menuText}>
+                <Text style={[styles.menuTitle, { color: themeText }]}>Data Management</Text>
+                <Text style={[styles.menuSubtitle, { color: themeSubText }]}>Learn how we protect your data</Text>
+              </View>
+              <MaterialCommunityIcons name="chevron-right" size={20} color={themeSubText} />
+            </TouchableOpacity>
+
+            <View style={{height: 1, backgroundColor: themeBorder, marginVertical: 20}} />
+
+            {/* Delete Account */}
+            <TouchableOpacity style={styles.deleteAccBtn} onPress={handleDeleteAccount}>
+              <MaterialCommunityIcons name="alert-circle-outline" size={20} color="#EF4444" style={{marginRight: 8}} />
+              <Text style={styles.deleteAccText}>Delete Account Permanently</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={[styles.cancelBtn, {marginTop: 10}]} onPress={() => setSecurityModalVisible(false)}>
+              <Text style={[styles.cancelBtnText, { color: themeSubText }]}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+{/* --- HELP CENTER MODAL --- */}
+      <Modal visible={isHelpModalVisible} animationType="slide" transparent={true}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContainer, { backgroundColor: themeCard, height: '70%' }]}>
+            <Text style={[styles.modalTitle, { color: themeText }]}>Help Center & FAQs</Text>
+            
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={{fontWeight: 'bold', fontSize: 16, color: themeText, marginTop: 10}}>Q: How do I get the most accurate result?</Text>
+              <Text style={{fontSize: 14, color: themeSubText, marginTop: 5, marginBottom: 15, lineHeight: 20}}>A: For best results, take the photo in natural daylight. Keep the camera 10-15 cm away, make sure it is in focus, and center the lesion.</Text>
+
+              <Text style={{fontWeight: 'bold', fontSize: 16, color: themeText}}>Q: Is this a final medical diagnosis?</Text>
+              <Text style={{fontSize: 14, color: themeSubText, marginTop: 5, marginBottom: 15, lineHeight: 20}}>A: No. MySkinApp is a screening tool designed to give you an early assessment. Always consult a dermatologist for proper treatment.</Text>
+
+              <Text style={{fontWeight: 'bold', fontSize: 16, color: themeText}}>Q: Is my data safe?</Text>
+              <Text style={{fontSize: 14, color: themeSubText, marginTop: 5, marginBottom: 15, lineHeight: 20}}>A: Yes. Your scan history is securely saved to your account. We do not share your personal medical data.</Text>
+            </ScrollView>
+
+            <TouchableOpacity style={styles.saveBtn} onPress={() => setHelpModalVisible(false)}>
+              <Text style={styles.saveBtnText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* --- TERMS & CONDITIONS MODAL --- */}
+      <Modal visible={isTermsModalVisible} animationType="slide" transparent={true}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContainer, { backgroundColor: themeCard, height: '70%' }]}>
+            <Text style={[styles.modalTitle, { color: themeText }]}>Terms & Conditions</Text>
+            
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={{fontWeight: 'bold', fontSize: 16, color: '#D32F2F', marginTop: 10}}>1. Important Medical Disclaimer</Text>
+              <Text style={{fontSize: 14, color: themeSubText, marginTop: 5, marginBottom: 15, lineHeight: 20}}>This application provides AI-based skin condition screening. It is strictly NOT a substitute for professional medical advice, diagnosis, or treatment.</Text>
+
+              <Text style={{fontWeight: 'bold', fontSize: 16, color: themeText}}>2. Accuracy Limitation</Text>
+              <Text style={{fontSize: 14, color: themeSubText, marginTop: 5, marginBottom: 15, lineHeight: 20}}>While our model is trained on vast datasets, AI predictions are not 100% accurate. Do not ignore professional advice based on a result from this app.</Text>
+
+              <Text style={{fontWeight: 'bold', fontSize: 16, color: themeText}}>3. Data Privacy</Text>
+              <Text style={{fontSize: 14, color: themeSubText, marginTop: 5, marginBottom: 15, lineHeight: 20}}>By using this app, you agree to securely store your screening history on our cloud database so you can access your past records at any time.</Text>
+            </ScrollView>
+
+            <TouchableOpacity style={styles.saveBtn} onPress={() => setTermsModalVisible(false)}>
+              <Text style={styles.saveBtnText}>I Agree & Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* 6. Bottom Tab Bar */}
       <View style={[styles.bottomTabBar, { backgroundColor: themeCard, borderTopColor: themeBorder }]}>
         <TouchableOpacity style={styles.tabItem} onPress={() => router.push('/(user)/(tabs)')}>
           <MaterialCommunityIcons name="home-outline" size={28} color={themeSubText} />
@@ -189,7 +451,7 @@ export default function ProfileScreen() {
           <Text style={[styles.tabLabel, { color: themeSubText }]}>History</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.tabItem}>
+        <TouchableOpacity style={styles.tabItem} onPress={() => router.push('/(user)/(tabs)/profile')}>
           <MaterialCommunityIcons name="account-circle" size={28} color="#1976D2" />
           <Text style={[styles.tabLabel, { color: '#1976D2' }]}>Profile</Text>
         </TouchableOpacity>
@@ -237,6 +499,20 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFEBEE', padding: 15, borderRadius: 15, gap: 10, marginTop: 10 
   },
   logoutText: { color: '#D32F2F', fontSize: 16, fontWeight: 'bold' },
+  
+  // Modal Styles
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalContainer: { borderTopLeftRadius: 25, borderTopRightRadius: 25, padding: 25 },
+  modalTitle: { fontSize: 22, fontWeight: 'bold', marginBottom: 20 },
+  inputLabel: { fontSize: 14, marginBottom: 8, fontWeight: 'bold' },
+  textInput: { borderWidth: 1, borderRadius: 12, padding: 15, fontSize: 16, marginBottom: 25 },
+  saveBtn: { backgroundColor: '#1976D2', padding: 15, borderRadius: 12, alignItems: 'center', marginBottom: 15 },
+  saveBtnText: { color: 'white', fontSize: 16, fontWeight: 'bold' },
+  deleteAccBtn: { padding: 15, alignItems: 'center', marginBottom: 10 },
+  deleteAccText: { color: '#EF4444', fontSize: 15, fontWeight: 'bold' },
+  cancelBtn: { padding: 15, alignItems: 'center' },
+  cancelBtnText: { fontSize: 16, fontWeight: 'bold' },
+  
   bottomTabBar: {
     position: 'absolute', bottom: 0, flexDirection: 'row', width: '100%', height: 80,
     borderTopWidth: 1, justifyContent: 'space-around', alignItems: 'center',
