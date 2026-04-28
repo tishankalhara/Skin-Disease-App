@@ -13,8 +13,9 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import Constants from 'expo-constants';
-import * as ImagePicker from 'expo-image-picker'; // 1. Added ImagePicker import
+import * as ImagePicker from 'expo-image-picker'; 
 
+// 1. Added ImagePicker import
 const { width } = Dimensions.get('window');
 
 export default function UserHome() {
@@ -22,6 +23,7 @@ export default function UserHome() {
 
   // 2. Added Camera logic function
   const handleCapture = async () => {
+
     // Request camera permissions
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     
@@ -78,7 +80,7 @@ export default function UserHome() {
       <View style={styles.header}>
         <View style={styles.headerContent}>
           <Text style={styles.headerTitle}>Skin Disease Detection</Text>
-          <Text style={styles.headerSub}>AI-Powered Screening Tool</Text>
+          <Text style={styles.headerSub}>Instant Skin Check</Text>
         </View>
       </View>
 
@@ -108,10 +110,13 @@ export default function UserHome() {
         </View>
 
         {/* Guidelines Link */}
-        <TouchableOpacity style={styles.guidelineLink}>
-          <MaterialCommunityIcons name="help-circle-outline" size={20} color="#1976D2" />
-          <Text style={styles.guidelineText}>Photo Guidelines & Best Practices</Text>
-        </TouchableOpacity>
+        <TouchableOpacity 
+         style={styles.guidelinesContainer} 
+        onPress={() => router.push('/(user)/guidelines')}
+          >
+         <MaterialCommunityIcons name="help-circle-outline" size={20} color="#1976D2" />
+           <Text style={styles.guidelineText}>Photo Guidelines & Best Practices</Text>
+         </TouchableOpacity>
 
         {/* Medical Disclaimer Card */}
         <View style={styles.disclaimerCard}>
@@ -161,6 +166,18 @@ export default function UserHome() {
 
 // ... styles keep exactly as you provided ...
 const styles = StyleSheet.create({
+  guidelinesContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 15,
+  },
+  guidelinesText: {
+    color: '#1976D2',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginLeft: 8,
+  },
   container: { flex: 1, backgroundColor: '#FFFFFF' },
   header: { 
     backgroundColor: '#1976D2', paddingHorizontal: 20, paddingBottom: 20,
