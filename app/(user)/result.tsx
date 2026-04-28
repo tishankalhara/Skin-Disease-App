@@ -4,6 +4,7 @@ import * as Print from 'expo-print';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Sharing from 'expo-sharing';
 import React, { useEffect, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   Alert, Dimensions,
   Image,
@@ -45,13 +46,45 @@ export default function ResultScreen() {
   const fullDiseaseName = diseaseNames[predictionCode] || 'Unknown Condition';
 
   // 1. Save to history function (placeholder for future backend integration)
-  const saveToHistory = () => {
-    
-    Alert.alert(
-      "Successfully Saved!", 
-      "This analysis result has been saved to your medical history.",
-      [{ text: "OK" }]
-    );
+  const saveToHistory = async () => {
+    try {
+  
+      const userEmail = await AsyncStorage.getItem('userEmail'); 
+
+      if (!userEmail) {
+        Alert.alert("Error", "Please login to save results.");
+        return;
+      }
+
+      // 2. Database record structure (adjust fields as needed for your backend schema)
+      const newRecord = {
+        id: Date.now().toString(),
+        user_email: userEmail, // Assuming you have the user's email stored in AsyncStorage after login
+        condition: fullDiseaseName,
+        risk: isHighRisk ? 'High' : (predictionCode === 'nv' ? 'Low' : 'Medium'),
+        confidence: formattedConfidence,
+        date: currentDate,
+        timestamp: Date.now()
+      };
+      
+      // 3. Python Backend API endpoint (replace with your actual backend URL)
+      const BACKEND_URL = 'http://192.168.8.61:8000/history/save'; 
+      
+      const response = await fetch(BACKEND_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newRecord)
+      });
+
+      if (response.ok) {
+        Alert.alert("Successfully Saved!", "This result has been saved to your account.");
+      }else {
+        Alert.alert("Save Failed", "Could not save the result. Please try again.");
+      }
+    } catch (error) {
+      console.error(error);
+      Alert.alert("Connection Error", "Could not save to database.");
+    }
   };
   // PDF generation and sharing function
   const generateAndSharePDF = async () => {
@@ -124,7 +157,7 @@ export default function ResultScreen() {
   const riskBgColor = isHighRisk ? '#FEE2E2' : '#FFF3E0';
 
   useEffect(() => {
-    // 4. Setting current date and time in a readable format
+    // Setting current date and time in a readable format
     const now = new Date();
     setCurrentDate(now.toLocaleString());
   }, []);
