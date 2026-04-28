@@ -1,51 +1,144 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   View, 
   Text, 
   StyleSheet, 
   ScrollView, 
   TouchableOpacity, 
-  TextInput, 
   StatusBar, 
   Platform,
-  Dimensions
+  Dimensions,
+  ActivityIndicator,
+  Alert
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import Constants from 'expo-constants';
-import { Picker } from '@react-native-picker/picker'; // Install this: npx expo install @react-native-picker/picker
-import Slider from '@react-native-community/slider'; // Install this: npx expo install @react-native-community/slider
+import { Picker } from '@react-native-picker/picker'; 
+import Slider from '@react-native-community/slider'; 
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 
 const { width } = Dimensions.get('window');
 
+
+const BACKEND_URL = 'http://192.168.8.61:8000/admin/records'; 
+
 export default function PredictionsRecordsScreen() {
   const router = useRouter();
+  
   const [selectedDisease, setSelectedDisease] = useState('All Diseases');
   const [minConfidence, setMinConfidence] = useState(0);
-  const [searchQuery, setSearchQuery] = useState('');
+  
+  const [records, setRecords] = useState<any[]>([]);
+  const [filteredRecords, setFilteredRecords] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // 1. Get Predictions Records from Backend 
+  useEffect(() => {
+    const fetchRecords = async () => {
+      try {
+        const response = await fetch(BACKEND_URL);
+        const data = await response.json();
+        
+        if (data.success) {
+          setRecords(data.records);
+        }
+      } catch (error) {
+        console.error("Error fetching records:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchRecords();
+    const interval = setInterval(fetchRecords, 10000); 
+    return () => clearInterval(interval);
+  }, []);
+
+  // 2. Filter Records based on selected disease and confidence
+  useEffect(() => {
+    let result = records;
+
+    // Disease Type 
+    if (selectedDisease !== 'All Diseases') {
+      result = result.filter(record => record.condition === selectedDisease);
+    }
+
+    // Confidence filtering 
+    result = result.filter(record => {
+      const confValue = parseFloat(record.confidence.replace('%', '')) || 0;
+      return confValue >= minConfidence;
+    });
+
+    setFilteredRecords(result);
+  }, [records, selectedDisease, minConfidence]);
+
+  // 3. Summary Stats for the current filter
+  const totalScans = filteredRecords.length;
+  const highRisk = filteredRecords.filter(r => r.risk === 'High').length;
+  const medRisk = filteredRecords.filter(r => r.risk === 'Medium').length;
+  const lowRisk = filteredRecords.filter(r => r.risk === 'Low').length;
+
+  // 4. CSV File Export Function
+  const exportToCSV = async () => {
+    try {
+      if (filteredRecords.length === 0) {
+        Alert.alert("No Data", "There are no records to export.");
+        return;
+      }
+
+      // CSV header
+      let csvString = "Record ID,Condition,Risk Level,User Email,Date,Confidence\n";
+      
+      // CSV rows
+      filteredRecords.forEach(record => {
+        csvString += `${record.id},${record.condition},${record.risk},${record.user_email},${record.date},${record.confidence}\n`;
+      });
+
+      // create a temporary file and write the CSV string into it
+
+      const fileUri = (FileSystem as any).documentDirectory + "SkinCheck_Records.csv";
+      await (FileSystem as any).writeAsStringAsync(fileUri, csvString, { encoding: (FileSystem as any).EncodingType.UTF8 });
+
+      // share the file (WhatsApp / Email etc.)
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(fileUri, { mimeType: 'text/csv', dialogTitle: 'Export Records' });
+      } else {
+        Alert.alert("Error", "Sharing is not available on this device.");
+      }
+    } catch (error:any) {
+      console.error(error);
+      Alert.alert("CSV Error", error.message ||"Unknown error occurred.");
+    }
+  };
 
   // Helper component for Record Cards
-  const PredictionRecord = ({ id, condition, risk, user, date, confidence }: any) => (
-    <View style={styles.recordCard}>
-      <View style={styles.recordHeader}>
-        <Text style={styles.recordId}>{id}</Text>
-        <View style={[styles.riskBadge, { backgroundColor: risk === 'High' ? '#FFEBEE' : risk === 'Medium' ? '#FFF3E0' : '#E8F5E9' }]}>
-          <Text style={[styles.riskText, { color: risk === 'High' ? '#D32F2F' : risk === 'Medium' ? '#EF6C00' : '#2E7D32' }]}>{risk}</Text>
+  const PredictionRecord = ({ id, condition, risk, user, date, confidence }: any) => {
+    const confValue = parseFloat(confidence.replace('%', '')) || 0;
+    
+    return (
+      <View style={styles.recordCard}>
+        <View style={styles.recordHeader}>
+          <Text style={styles.recordId}>ID: {id.slice(-6)}</Text> 
+          <View style={[styles.riskBadge, { backgroundColor: risk === 'High' ? '#FFEBEE' : risk === 'Medium' ? '#FFF3E0' : '#E8F5E9' }]}>
+            <Text style={[styles.riskText, { color: risk === 'High' ? '#D32F2F' : risk === 'Medium' ? '#EF6C00' : '#2E7D32' }]}>{risk}</Text>
+          </View>
+        </View>
+        <Text style={styles.conditionTitle}>{condition}</Text>
+        <View style={styles.recordMeta}>
+          <Text style={styles.metaText}>{user}</Text>
+          <Text style={styles.metaText}>{date}</Text>
+        </View>
+        <View style={styles.progressContainer}>
+          <View style={styles.progressBarBg}>
+            <View style={[styles.progressBarFill, { width: `${confValue}%` }]} />
+          </View>
+          <Text style={styles.confidencePercentage}>{confidence}</Text>
         </View>
       </View>
-      <Text style={styles.conditionTitle}>{condition}</Text>
-      <View style={styles.recordMeta}>
-        <Text style={styles.metaText}>{user}</Text>
-        <Text style={styles.metaText}>{date}</Text>
-      </View>
-      <View style={styles.progressContainer}>
-        <View style={styles.progressBarBg}>
-          <View style={[styles.progressBarFill, { width: `${confidence}%` }]} />
-        </View>
-        <Text style={styles.confidencePercentage}>{confidence}%</Text>
-      </View>
-    </View>
-  );
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -55,9 +148,8 @@ export default function PredictionsRecordsScreen() {
       <View style={styles.header}>
         <View style={styles.headerTop}>
           <Text style={styles.headerTitle}>Predictions & Records</Text>
-          
         </View>
-        <Text style={styles.headerSub}>Admin Panel</Text>
+        <Text style={styles.headerSub}>Clinical Case Repository</Text>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -97,36 +189,38 @@ export default function PredictionsRecordsScreen() {
           />
         </View>
 
-        {/* 2. Search and Export (image_9d363f.png) */}
-        <View style={styles.searchContainer}>
-          <MaterialCommunityIcons name="magnify" size={22} color="#94A3B8" />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search predictions..."
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
-        </View>
-
-        <TouchableOpacity style={styles.exportBtn}>
+        {/* 2. Export Button*/}
+        <TouchableOpacity style={styles.exportBtn} onPress={exportToCSV}>
           <MaterialCommunityIcons name="download-outline" size={22} color="#1976D2" />
           <Text style={styles.exportText}>Export CSV</Text>
         </TouchableOpacity>
 
         {/* 3. Summary Stats */}
         <View style={styles.statsGrid}>
-          <View style={styles.statBox}><Text style={styles.statVal}>Total</Text><Text style={styles.statNum}>6</Text></View>
-          <View style={[styles.statBox, {borderColor: '#FFEBEE'}]}><Text style={[styles.statVal, {color: '#D32F2F'}]}>High</Text><Text style={styles.statNum}>2</Text></View>
-          <View style={[styles.statBox, {borderColor: '#FFF3E0'}]}><Text style={[styles.statVal, {color: '#EF6C00'}]}>Med</Text><Text style={styles.statNum}>1</Text></View>
-          <View style={[styles.statBox, {borderColor: '#E8F5E9'}]}><Text style={[styles.statVal, {color: '#2E7D32'}]}>Low</Text><Text style={styles.statNum}>3</Text></View>
+          <View style={styles.statBox}><Text style={styles.statVal}>Total</Text><Text style={styles.statNum}>{totalScans}</Text></View>
+          <View style={[styles.statBox, {borderColor: '#FFEBEE'}]}><Text style={[styles.statVal, {color: '#D32F2F'}]}>High</Text><Text style={styles.statNum}>{highRisk}</Text></View>
+          <View style={[styles.statBox, {borderColor: '#FFF3E0'}]}><Text style={[styles.statVal, {color: '#EF6C00'}]}>Med</Text><Text style={styles.statNum}>{medRisk}</Text></View>
+          <View style={[styles.statBox, {borderColor: '#E8F5E9'}]}><Text style={[styles.statVal, {color: '#2E7D32'}]}>Low</Text><Text style={styles.statNum}>{lowRisk}</Text></View>
         </View>
 
         {/* 4. Predictions Records List */}
-        <PredictionRecord id="PRED-1245" condition="Melanoma" risk="High" user="USR-001" date="2026-02-09 10:30" confidence={87} />
-        <PredictionRecord id="PRED-1244" condition="Basal Cell Carcinoma" risk="Medium" user="USR-003" date="2026-02-09 09:45" confidence={78} />
-        <PredictionRecord id="PRED-1242" condition="Benign Keratosis" risk="Low" user="USR-002" date="2026-02-08 16:20" confidence={91} />
-        <PredictionRecord id="PRED-1241" condition="Actinic Keratosis" risk="Medium" user="USR-006" date="2026-02-08 14:35" confidence={85} />
-        <PredictionRecord id="PRED-1240" condition="Vascular Lesions" risk="Low" user="USR-004" date="2026-02-08 11:50" confidence={89} />
+        {loading ? (
+          <ActivityIndicator size="large" color="#1976D2" style={{marginTop: 30}} />
+        ) : filteredRecords.length === 0 ? (
+          <Text style={{textAlign: 'center', color: '#94A3B8', marginTop: 30}}>No records found for this filter.</Text>
+        ) : (
+          filteredRecords.map((record, index) => (
+            <PredictionRecord 
+              key={index}
+              id={record.id} 
+              condition={record.condition} 
+              risk={record.risk} 
+              user={record.user_email} 
+              date={record.date} 
+              confidence={record.confidence} 
+            />
+          ))
+        )}
 
       </ScrollView>
     </View>
@@ -150,9 +244,7 @@ const styles = StyleSheet.create({
   picker: { height: 50, width: '100%' },
   sliderLabel: { fontSize: 13, color: '#64748B', marginBottom: 5, fontWeight: '600' },
   slider: { width: '100%', height: 40 },
-  searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', borderRadius: 12, paddingHorizontal: 15, height: 50, borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 12 },
-  searchInput: { flex: 1, marginLeft: 10, fontSize: 15 },
-  exportBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: '#1976D2', borderRadius: 12, height: 50, gap: 8, marginBottom: 20 },
+  exportBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: '#1976D2', borderRadius: 12, height: 50, gap: 8, marginBottom: 20, backgroundColor: '#E3F2FD' },
   exportText: { color: '#1976D2', fontSize: 16, fontWeight: 'bold' },
   statsGrid: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 },
   statBox: { backgroundColor: 'white', width: (width / 4) - 15, padding: 10, borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0' },
@@ -160,7 +252,7 @@ const styles = StyleSheet.create({
   statNum: { fontSize: 18, fontWeight: 'bold', color: '#1976D2', marginTop: 4 },
   recordCard: { backgroundColor: 'white', borderRadius: 16, padding: 15, marginBottom: 12, borderWidth: 1, borderColor: '#E2E8F0' },
   recordHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 },
-  recordId: { fontSize: 14, fontWeight: 'bold', color: '#64748B' },
+  recordId: { fontSize: 14, fontWeight: 'bold', color: '#64748B', textTransform: 'uppercase' },
   riskBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
   riskText: { fontSize: 11, fontWeight: 'bold' },
   conditionTitle: { fontSize: 17, fontWeight: 'bold', color: '#0F172A', marginBottom: 5 },
