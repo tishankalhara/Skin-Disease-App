@@ -3,35 +3,53 @@ import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Dimensions, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../_layout';
+import { PieChart } from "react-native-gifted-charts"; 
+
 const { width } = Dimensions.get('window');
+
+
+const BACKEND_URL = 'http://192.168.8.61:8000/admin/dashboard'; 
 
 export default function AdminDashboard() {
   const router = useRouter();
   const { logout } = useAuth();
   
-  const [stats, setStats] = useState({ totalUsers: 0, totalScans: 0 });
+  const [dashboardData, setDashboardData] = useState({
+    totalUsers: 0,
+    totalScans: 0,
+    scansToday: 0,
+    avgConfidence: "--",
+    diseaseDistribution: [] as any[],
+    recentActivity: [] as any[]
+  });
   const [loading, setLoading] = useState(true);
 
- 
   useEffect(() => {
-    const fetchStats = async () => {
+    const fetchDashboardData = async () => {
       try {
-        
-        const response = await fetch('http://192.168.8.61:8000/admin/stats');
+        const response = await fetch(BACKEND_URL);
         const data = await response.json();
         
-        setStats({
-          totalUsers: data.totalUsers || 0,
-          totalScans: data.totalScans || 0
-        });
+        if (data.success) {
+          setDashboardData({
+            totalUsers: data.total_users,
+            totalScans: data.total_scans,
+            scansToday: data.scans_today,
+            avgConfidence: data.avg_confidence,
+            diseaseDistribution: data.disease_distribution,
+            recentActivity: data.recent_activity
+          });
+        }
       } catch (error) {
-        console.error("Stats fetching error:", error);
+        console.error("Dashboard fetching error:", error);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchStats();
+    fetchDashboardData();
+    const interval = setInterval(fetchDashboardData, 10000);
+    return () => clearInterval(interval);
   }, []);
 
   const handleLogout = () => {
@@ -39,7 +57,6 @@ export default function AdminDashboard() {
     router.replace('/(auth)/login' as any);
   };
 
-  // Stats Card Component
   const StatCard = ({ icon, title, value, subtext, color, iconBg }: any) => (
     <View style={styles.statCard}>
       <View style={[styles.iconBox, { backgroundColor: iconBg }]}>
@@ -51,9 +68,28 @@ export default function AdminDashboard() {
     </View>
   );
 
+  const formatTimeAgo = (timestamp: number) => {
+    const seconds = Math.floor((Date.now() - timestamp) / 1000);
+    if (seconds < 60) return "Just Now";
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes} min ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+    return `${Math.floor(hours / 24)} days ago`;
+  };
+
+  // CHART DATA PREPARATION
+  const chartColors = ['#D32F2F', '#F9A825', '#2E7D32', '#1976D2', '#9C27B0', '#009688'];
+  
+  const pieData = dashboardData.diseaseDistribution.map((item, index) => ({
+    value: item.percentage,
+    color: chartColors[index % chartColors.length],
+    text: `${item.percentage}%`,
+    label: item.name
+  }));
+
   return (
     <SafeAreaView style={styles.safeArea}>
-      {/* Header Section */}
       <View style={styles.header}>
         <View>
           <Text style={styles.headerTitle}>Admin Dashboard</Text>
@@ -73,56 +109,52 @@ export default function AdminDashboard() {
       ) : (
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           
-          {/* 1. Stats Grid Section */}
           <View style={styles.statsGrid}>
-            <StatCard 
-               icon="account-group" 
-               title="Total Users" 
-               value={stats.totalUsers.toString()} 
-               subtext="Live from MongoDB" 
-               color="#1976D2" 
-               iconBg="#E3F2FD" 
-            />
-            <StatCard 
-               icon="pulse" 
-               title="Total Scans" 
-               value={stats.totalScans.toString()} 
-               subtext="System Total" 
-               color="#2E7D32" 
-               iconBg="#E8F5E9" 
-            />
-            <StatCard 
-               icon="trending-up" 
-               title="Scans Today" 
-               value="0" 
-               subtext="Reset at Midnight" 
-               color="#EF6C00" 
-               iconBg="#FFF3E0" 
-            />
-            <StatCard 
-               icon="clock-outline" 
-               title="Avg Confidence" 
-               value="--" 
-               subtext="Target: 85%+" 
-               color="#9C27B0" 
-               iconBg="#F3E5F5" 
-            />
+            <StatCard icon="account-group" title="Total Users" value={dashboardData.totalUsers.toString()} subtext="Live from MongoDB" color="#1976D2" iconBg="#E3F2FD" />
+            <StatCard icon="pulse" title="Total Scans" value={dashboardData.totalScans.toString()} subtext="System Total" color="#2E7D32" iconBg="#E8F5E9" />
+            <StatCard icon="trending-up" title="Scans Today" value={dashboardData.scansToday.toString()} subtext="Reset at Midnight" color="#EF6C00" iconBg="#FFF3E0" />
+            <StatCard icon="clock-outline" title="Avg Confidence" value={dashboardData.avgConfidence} subtext="Target: 85%+" color="#9C27B0" iconBg="#F3E5F5" />
           </View>
 
           {/* 2. Disease Distribution Card */}
           <View style={styles.card}>
             <Text style={styles.cardHeader}>Disease Distribution</Text>
+            
             <View style={styles.pieContainer}>
-               <View style={styles.pieChartPlaceholder} />
+               <View style={{alignItems: 'center', marginVertical: 15}}>
+                 <PieChart
+                    data={pieData.length > 0 ? pieData : [{ value: 100, color: '#E2E8F0' }]}
+                    donut
+                    radius={75}
+                    innerRadius={55}
+                    innerCircleColor={'white'}
+                    centerLabelComponent={() => {
+                      return (
+                        <View style={{ justifyContent: 'center', alignItems: 'center' }}>
+                          <Text style={{ fontSize: 22, fontWeight: 'bold', color: '#0F172A' }}>
+                            {dashboardData.totalScans}
+                          </Text>
+                          <Text style={{ fontSize: 11, color: '#64748B' }}>Total</Text>
+                        </View>
+                      );
+                    }}
+                 />
+               </View>
+
                <View style={styles.legendContainer}>
-                  <View style={styles.legendRow}>
-                     <LegendItem color="#D32F2F" label="Melanoma (18%)" />
-                     <LegendItem color="#F9A825" label="BCC (25%)" />
-                  </View>
-                  <View style={styles.legendRow}>
-                     <LegendItem color="#2E7D32" label="Nevus (35%)" />
-                     <LegendItem color="#1976D2" label="B.Keratosis (12%)" />
-                  </View>
+                  {dashboardData.diseaseDistribution.length === 0 ? (
+                    <Text style={{textAlign: 'center', color: '#94A3B8'}}>No scan data yet.</Text>
+                  ) : (
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', marginTop: 10 }}>
+                      {dashboardData.diseaseDistribution.map((item, index) => (
+                        <LegendItem 
+                          key={index} 
+                          color={chartColors[index % chartColors.length]} 
+                          label={`${item.name} (${item.percentage}%)`} 
+                        />
+                      ))}
+                    </View>
+                  )}
                </View>
             </View>
           </View>
@@ -130,9 +162,19 @@ export default function AdminDashboard() {
           {/* 3. Recent Activity Section */}
           <View style={[styles.card, { marginBottom: 30 }]}>
             <Text style={styles.cardHeader}>Recent Activity</Text>
-            <ActivityItem title="Melanoma Case" user="User_441" time="Just Now" score="87%" />
-            <ActivityItem title="Nevus Detected" user="User_921" time="15 min ago" score="91%" />
-            <ActivityItem title="BCC Scan" user="User_102" time="1 hour ago" score="78%" />
+            {dashboardData.recentActivity.length === 0 ? (
+               <Text style={{textAlign: 'center', color: '#94A3B8', marginVertical: 10}}>No recent scans.</Text>
+            ) : (
+               dashboardData.recentActivity.map((activity, index) => (
+                 <ActivityItem 
+                    key={index}
+                    title={activity.condition} 
+                    user={activity.user} 
+                    time={formatTimeAgo(activity.timestamp)} 
+                    score={activity.confidence} 
+                 />
+               ))
+            )}
           </View>
         </ScrollView>
       )}
@@ -166,80 +208,25 @@ const ActivityItem = ({ title, user, time, score }: any) => (
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#F8FAFC' },
-  header: { 
-    backgroundColor: '#1976D2', 
-    paddingHorizontal: 20, 
-    paddingTop: 50, 
-    paddingBottom: 25, 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
-    alignItems: 'center' 
-  },
+  header: { backgroundColor: '#1976D2', paddingHorizontal: 20, paddingTop: 50, paddingBottom: 25, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   headerTitle: { color: 'white', fontSize: 26, fontWeight: 'bold' },
   headerSub: { color: 'rgba(255,255,255,0.8)', fontSize: 13 },
   scrollContent: { padding: 15 },
   statsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
-  statCard: { 
-    backgroundColor: 'white', 
-    width: (width / 2) - 22, 
-    padding: 15, 
-    borderRadius: 16, 
-    marginBottom: 15, 
-    borderWidth: 1, 
-    borderColor: '#E2E8F0' 
-  },
-  iconBox: { 
-    width: 44, 
-    height: 44, 
-    borderRadius: 12, 
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    marginBottom: 10 
-  },
+  statCard: { backgroundColor: 'white', width: (width / 2) - 22, padding: 15, borderRadius: 16, marginBottom: 15, borderWidth: 1, borderColor: '#E2E8F0' },
+  iconBox: { width: 44, height: 44, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginBottom: 10 },
   statTitle: { color: '#64748B', fontSize: 13 },
   statValue: { fontSize: 20, fontWeight: 'bold', marginVertical: 4 },
   statSub: { fontSize: 11, fontWeight: '600' },
-  card: { 
-    backgroundColor: 'white', 
-    padding: 15, 
-    borderRadius: 16, 
-    marginBottom: 15, 
-    borderWidth: 1, 
-    borderColor: '#E2E8F0' 
-  },
+  card: { backgroundColor: 'white', padding: 15, borderRadius: 16, marginBottom: 15, borderWidth: 1, borderColor: '#E2E8F0' },
   cardHeader: { fontSize: 17, fontWeight: 'bold', color: '#0F172A', marginBottom: 15 },
   pieContainer: { alignItems: 'center' },
-  pieChartPlaceholder: { 
-    width: 120, 
-    height: 120, 
-    borderRadius: 60, 
-    borderWidth: 15, 
-    borderColor: '#2E7D32', 
-    borderTopColor: '#D32F2F', 
-    borderRightColor: '#F9A825', 
-    borderLeftColor: '#1976D2', 
-    marginBottom: 20 
-  },
   legendContainer: { width: '100%' },
-  legendRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
-  legendItem: { flexDirection: 'row', alignItems: 'center', width: '48%' },
+  legendItem: { flexDirection: 'row', alignItems: 'center', width: '48%', marginBottom: 10 },
   dot: { width: 10, height: 10, borderRadius: 5, marginRight: 8 },
   legendText: { fontSize: 12, color: '#64748B' },
-  activityItem: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    paddingVertical: 12, 
-    borderBottomWidth: 1, 
-    borderBottomColor: '#F1F5F9' 
-  },
-  activityIcon: { 
-    width: 36, 
-    height: 36, 
-    borderRadius: 18, 
-    backgroundColor: '#E3F2FD', 
-    justifyContent: 'center', 
-    alignItems: 'center' 
-  },
+  activityItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
+  activityIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#E3F2FD', justifyContent: 'center', alignItems: 'center' },
   activityDetails: { flex: 1, marginLeft: 12 },
   activityTitle: { fontSize: 14, fontWeight: 'bold', color: '#0F172A' },
   activityUser: { fontSize: 12, color: '#64748B' },
