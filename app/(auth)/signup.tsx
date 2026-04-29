@@ -5,15 +5,44 @@ import { Alert, SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, TextInput
 
 export default function SignUpScreen() {
   const router = useRouter();
+  
+  // States
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  
+  // Password Visibility States
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+  // Email Auto-completion Function
+  const handleEmailChange = (text: string) => {
+    if (text.endsWith('@') && !email.includes('@')) {
+      setEmail(text + 'gmail.com');
+    } else {
+      setEmail(text);
+    }
+  };
+
+  // Password Validation
+  const isLengthValid = password.length >= 8;
+  const hasUppercase = /[A-Z]/.test(password);
+  const hasNumber = /\d/.test(password);
+  const hasSpecialChar = /[@$!%*?&]/.test(password);
+  
+  
+  const isPasswordValid = isLengthValid && hasUppercase && hasNumber && hasSpecialChar;
 
   const handleSignUp = async () => {
     // 1. Validation
     if (!fullName || !email || !password || !confirmPassword) {
       Alert.alert("Error", "Please fill all fields!");
+      return;
+    }
+
+    if (!isPasswordValid) {
+      Alert.alert("Weak Password", "Please make sure your password meets all the security requirements.");
       return;
     }
 
@@ -23,7 +52,7 @@ export default function SignUpScreen() {
     }
 
     try {
-    
+      
       const BASE_URL = 'http://192.168.8.61:8000'; 
       
       const response = await fetch(`${BASE_URL}/auth/signup`, {
@@ -52,6 +81,20 @@ export default function SignUpScreen() {
     }
   };
 
+  // Checklist Component 
+  const ValidationRow = ({ isValid, text }: { isValid: boolean, text: string }) => (
+    <View style={styles.validationRow}>
+      <MaterialCommunityIcons 
+        name={isValid ? "check-circle" : "close-circle-outline"} 
+        size={16} 
+        color={isValid ? "#4CAF50" : "#94A3B8"} 
+      />
+      <Text style={[styles.validationText, { color: isValid ? "#4CAF50" : "#64748B" }]}>
+        {text}
+      </Text>
+    </View>
+  );
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
@@ -68,6 +111,7 @@ export default function SignUpScreen() {
 
         {/* Input Fields */}
         <View style={styles.inputContainer}>
+          
           <View style={styles.inputBox}>
             <MaterialCommunityIcons name="account-outline" size={22} color="#64748B" />
             <TextInput 
@@ -84,12 +128,13 @@ export default function SignUpScreen() {
               style={styles.input} 
               placeholder="Email Address" 
               value={email}
-              onChangeText={setEmail}
+              onChangeText={handleEmailChange} 
               keyboardType="email-address"
               autoCapitalize="none"
             />
           </View>
 
+          {/* Password Input with Eye Icon */}
           <View style={styles.inputBox}>
             <MaterialCommunityIcons name="lock-outline" size={22} color="#64748B" />
             <TextInput 
@@ -97,10 +142,29 @@ export default function SignUpScreen() {
               placeholder="Password" 
               value={password}
               onChangeText={setPassword}
-              secureTextEntry 
+              secureTextEntry={!showPassword} 
             />
+            <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeIcon}>
+              <MaterialCommunityIcons 
+                name={showPassword ? 'eye-off-outline' : 'eye-outline'} 
+                size={22} 
+                color="#94A3B8" 
+              />
+            </TouchableOpacity>
           </View>
 
+          {/* Real-time Password Checklist */}
+          <View style={styles.checklistContainer}>
+            <Text style={styles.checklistTitle}>Password must contain:</Text>
+            <View style={styles.rulesGrid}>
+              <ValidationRow isValid={isLengthValid} text="At least 8 characters" />
+              <ValidationRow isValid={hasUppercase} text="At least 1 Uppercase letter (A-Z)" />
+              <ValidationRow isValid={hasNumber} text="At least 1 Number (0-9)" />
+              <ValidationRow isValid={hasSpecialChar} text="At least 1 Special char (@, $, ! etc.)" />
+            </View>
+          </View>
+
+          {/* Confirm Password Input with Eye Icon */}
           <View style={styles.inputBox}>
             <MaterialCommunityIcons name="lock-check-outline" size={22} color="#64748B" />
             <TextInput 
@@ -108,13 +172,24 @@ export default function SignUpScreen() {
               placeholder="Confirm Password" 
               value={confirmPassword}
               onChangeText={setConfirmPassword}
-              secureTextEntry 
+              secureTextEntry={!showConfirmPassword} 
             />
+            <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)} style={styles.eyeIcon}>
+              <MaterialCommunityIcons 
+                name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'} 
+                size={22} 
+                color="#94A3B8" 
+              />
+            </TouchableOpacity>
           </View>
+
         </View>
 
         {/* Sign Up Button */}
-        <TouchableOpacity style={styles.signUpBtn} onPress={handleSignUp}>
+        <TouchableOpacity 
+          style={[styles.signUpBtn, { opacity: isPasswordValid ? 1 : 0.7 }]} 
+          onPress={handleSignUp}
+        >
           <Text style={styles.signUpText}>Sign Up</Text>
         </TouchableOpacity>
 
@@ -137,7 +212,16 @@ const styles = StyleSheet.create({
   subText: { fontSize: 15, color: '#64748B', textAlign: 'center', marginTop: 8 },
   inputContainer: { gap: 15, marginBottom: 25 },
   inputBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 12, paddingHorizontal: 15, height: 60 },
-  input: { flex: 1, marginLeft: 12, fontSize: 16 },
+  input: { flex: 1, marginLeft: 12, fontSize: 16, color: '#0F172A' },
+  eyeIcon: { padding: 5 },
+  
+  // Checklist Styles
+  checklistContainer: { backgroundColor: '#F8FAFC', padding: 15, borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', marginTop: -5, marginBottom: 5 },
+  checklistTitle: { fontSize: 12, color: '#0F172A', marginBottom: 8, fontWeight: 'bold' },
+  rulesGrid: { gap: 6 },
+  validationRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  validationText: { fontSize: 12 },
+  
   signUpBtn: { backgroundColor: '#1976D2', height: 60, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginTop: 10 },
   signUpText: { color: 'white', fontSize: 18, fontWeight: 'bold' },
   footer: { marginTop: 25, alignItems: 'center' },
