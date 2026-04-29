@@ -77,6 +77,7 @@ async def signup(user: SignupRequest):
 
 @app.post("/auth/login")
 async def login(credentials: LoginRequest):
+
     # Admin Check 
     if credentials.email == "admin@gmail.com" and credentials.password == "admin1234":
         return {"role": "admin"} 
@@ -103,8 +104,6 @@ async def predict_skin_disease(file: UploadFile = File(...)):
         img_array = tf.keras.preprocessing.image.img_to_array(image)
         img_array = np.expand_dims(img_array, axis=0)
 
-        img_array = img_array / 255.0
-        
         predictions = model.predict(img_array)
         
         predicted_class_index = np.argmax(predictions[0])
@@ -209,10 +208,10 @@ async def delete_user_account(email: str):
 @app.get("/admin/dashboard")
 async def get_admin_dashboard():
     try:
-        # 1. Total Users 
+        #  Total Users 
         total_users = await user_collection.count_documents({"role": {"$ne": "admin"}})
         
-        # 2. Database all Scans
+        #  Database all Scans
         cursor = history_collection.find()
         all_scans = await cursor.to_list(length=None)
         total_scans = len(all_scans)
@@ -222,7 +221,7 @@ async def get_admin_dashboard():
         total_confidence = 0
         disease_counts = {}
         
-        # Today's midnight timestamp in milliseconds
+        
         today_midnight = datetime.combine(datetime.today(), datetime.min.time()).timestamp() * 1000
         
         for scan in all_scans:
@@ -244,7 +243,7 @@ async def get_admin_dashboard():
         # Average Confidence calculation
         avg_confidence = round(total_confidence / total_scans) if total_scans > 0 else 0
         
-        # 3. Recent Activity 
+        #  Recent Activity 
         sorted_scans = sorted(all_scans, key=lambda x: x.get("timestamp", 0), reverse=True)
         recent_activities = []
         for scan in sorted_scans[:3]:
@@ -260,7 +259,7 @@ async def get_admin_dashboard():
                 "timestamp": scan.get("timestamp")
             })
             
-        # 4. Chart Data for disease distribution
+        #  Chart Data for disease distribution
         chart_data = []
         for condition_name, count in disease_counts.items():
             percentage = round((count / total_scans) * 100) if total_scans > 0 else 0
@@ -309,10 +308,10 @@ async def get_all_users():
 @app.delete("/admin/users/{email}")
 async def admin_delete_user(email: str):
     try:
-        # 1. delete the user from users collection
+        #  delete the user from users collection
         delete_user = await user_collection.delete_one({"email": email})
         
-        # 2. delete all history records of that user
+        #  delete all history records of that user
         await history_collection.delete_many({"user_email": email})
         
         if delete_user.deleted_count == 1:
@@ -336,7 +335,7 @@ async def get_all_records():
         # Sort records by timestamp in descending order
         sorted_records = sorted(all_records, key=lambda x: x.get("timestamp", 0), reverse=True)
         
-        # MongoDB _id එක string එකක් කරනවා 
+        # MongoDB _id field is not JSON serializable, convert it to string
         for record in sorted_records:
             record["_id"] = str(record["_id"])
             
