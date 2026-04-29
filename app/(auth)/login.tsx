@@ -12,6 +12,17 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  
+  const [showPassword, setShowPassword] = useState(false);
+
+  
+  const handleEmailChange = (text: string) => {
+    if (text.endsWith('@') && !email.includes('@')) {
+      setEmail(text + 'gmail.com');
+    } else {
+      setEmail(text);
+    }
+  };
 
   
   const handleLogin = async () => {
@@ -66,14 +77,17 @@ export default function LoginScreen() {
         </View>
 
         {/* Input Fields */}
+        
         <View style={styles.inputContainer}>
+          
           <View style={styles.inputBox}>
             <MaterialCommunityIcons name="email-outline" size={22} color="#64748B" />
             <TextInput 
               style={styles.input} 
               placeholder="Email Address" 
               value={email}
-              onChangeText={setEmail}
+              
+              onChangeText={handleEmailChange} 
               keyboardType="email-address"
               autoCapitalize="none"
             />
@@ -86,9 +100,21 @@ export default function LoginScreen() {
               placeholder="Password" 
               value={password}
               onChangeText={setPassword}
-              secureTextEntry 
+              
+              secureTextEntry={!showPassword} 
             />
+            
+            <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={{ padding: 5 }}>
+              <MaterialCommunityIcons 
+                name={showPassword ? 'eye-off-outline' : 'eye-outline'} 
+                size={22} 
+                color="#94A3B8" 
+              />
+            </TouchableOpacity>
           </View>
+          
+        </View>
+
         </View>
 
         {/* Sign In Button */}
@@ -115,7 +141,7 @@ export default function LoginScreen() {
         <Text style={styles.footerText}>
           "This is a supportive screening tool, not a medical diagnosis."
         </Text>
-      </View>
+      
     </SafeAreaView>
   );
 }
@@ -130,9 +156,10 @@ const styles = StyleSheet.create({
   inputContainer: { gap: 15, marginBottom: 25 },
   inputBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 12, paddingHorizontal: 15, height: 60 },
   input: { flex: 1, marginLeft: 12, fontSize: 16 },
-  signInBtn: { backgroundColor: '#1976D2', height: 60, borderRadius: 12, justifyContent: 'center', alignItems: 'center', elevation: 2, shadowOpacity: 0.1 },
+  signInBtn: { width: '80%', alignSelf: 'center', backgroundColor: '#1976D2', height: 60, borderRadius: 12, justifyContent: 'center', alignItems: 'center', elevation: 2, shadowOpacity: 0.1 },
   signInText: { color: 'white', fontSize: 18, fontWeight: 'bold' },
   createAccountBtn: { marginTop: 20, alignItems: 'center', padding: 10 },
   createAccountText: { color: '#1976D2', fontWeight: '700', fontSize: 16 },
   footerText: { marginTop: 50, color: '#94A3B8', fontSize: 12, fontStyle: 'italic', textAlign: 'center' },
+  
 });
