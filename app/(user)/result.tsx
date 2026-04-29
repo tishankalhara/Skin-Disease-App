@@ -19,7 +19,7 @@ import {
 
 const { width } = Dimensions.get('window');
 
-// 1. Disease code to full name mapping for better UI display
+// 1. Disease code to full name mapping
 const diseaseNames: Record<string, string> = {
   'akiec': 'Actinic Keratoses',
   'bcc': 'Basal Cell Carcinoma',
@@ -35,61 +35,68 @@ export default function ResultScreen() {
   
   const [currentDate, setCurrentDate] = useState('');
 
-  // 2. Data extraction from route params with fallback values
+  // 2. Data extraction from route params
   const imageUri = params.imageUri as string;
   const predictionCode = (params.prediction as string) || 'unknown';
   const confidenceLevel = (params.confidence as string) || '0%';
   
-  // 3. Confidence level parsing for progress bar
+  // 3. Confidence level parsing
   const confidenceNumber = parseFloat(confidenceLevel.replace('%', '')) || 0;
   const formattedConfidence = Math.round(confidenceNumber) + '%';
   const fullDiseaseName = diseaseNames[predictionCode] || 'Unknown Condition';
 
-  // 1. Save to history function (placeholder for future backend integration)
-  const saveToHistory = async () => {
-    try {
+  // Risk Calculations
+  const isHighRisk = predictionCode === 'mel' || predictionCode === 'bcc';
+  const riskText = isHighRisk ? 'High Risk' : 'Medium Risk';
+  const riskColor = isHighRisk ? '#EF4444' : '#EF6C00'; 
+  const riskBgColor = isHighRisk ? '#FEE2E2' : '#FFF3E0';
+
+  // Auto save to history on page load
   
-      const userEmail = await AsyncStorage.getItem('userEmail'); 
+  useEffect(() => {
+    const now = new Date();
+    const dateString = now.toLocaleString();
+    setCurrentDate(dateString);
 
-      if (!userEmail) {
-        Alert.alert("Error", "Please login to save results.");
-        return;
+    const autoSaveToHistory = async () => {
+      try {
+        const userEmail = await AsyncStorage.getItem('userEmail'); 
+        if (!userEmail) return; 
+
+        const newRecord = {
+          id: Date.now().toString(),
+          user_email: userEmail, 
+          condition: fullDiseaseName,
+          risk: isHighRisk ? 'High' : (predictionCode === 'nv' ? 'Low' : 'Medium'),
+          confidence: formattedConfidence,
+          date: dateString, 
+          timestamp: Date.now()
+        };
+        
+       
+        const BACKEND_URL = 'http://192.168.8.61:8000/history/save'; 
+        
+        await fetch(BACKEND_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newRecord)
+        });
+        
+        
+        console.log("Auto-saved to history successfully!");
+
+      } catch (error) {
+        console.error("Auto-save failed:", error);
       }
+    };
 
-      // 2. Database record structure (adjust fields as needed for your backend schema)
-      const newRecord = {
-        id: Date.now().toString(),
-        user_email: userEmail, // Assuming you have the user's email stored in AsyncStorage after login
-        condition: fullDiseaseName,
-        risk: isHighRisk ? 'High' : (predictionCode === 'nv' ? 'Low' : 'Medium'),
-        confidence: formattedConfidence,
-        date: currentDate,
-        timestamp: Date.now()
-      };
-      
-      // 3. Python Backend API endpoint (replace with your actual backend URL)
-      const BACKEND_URL = 'http://192.168.8.61:8000/history/save'; 
-      
-      const response = await fetch(BACKEND_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newRecord)
-      });
+    autoSaveToHistory();
+  }, []); 
 
-      if (response.ok) {
-        Alert.alert("Successfully Saved!", "This result has been saved to your account.");
-      }else {
-        Alert.alert("Save Failed", "Could not save the result. Please try again.");
-      }
-    } catch (error) {
-      console.error(error);
-      Alert.alert("Connection Error", "Could not save to database.");
-    }
-  };
+
   // PDF generation and sharing function
   const generateAndSharePDF = async () => {
     try {
-      // PDF content with inline styles for better formatting
       const htmlContent = `
         <html>
           <body style="font-family: Arial, sans-serif; padding: 40px; color: #333;">
@@ -131,13 +138,11 @@ export default function ResultScreen() {
         </html>
       `;
 
-      // HTML convert to PDF
       const { uri } = await Print.printToFileAsync({
         html: htmlContent,
         base64: false
       });
 
-      // Save or share the generated PDF
       await Sharing.shareAsync(uri, {
         mimeType: 'application/pdf',
         dialogTitle: 'Save or Share Analysis Report',
@@ -149,18 +154,6 @@ export default function ResultScreen() {
       Alert.alert("Error", "Could not generate the report. Please try again.");
     }
   };
-
-  // Melanoma and Basal Cell Carcinoma are considered high risk, others medium risk for this example
-  const isHighRisk = predictionCode === 'mel' || predictionCode === 'bcc';
-  const riskText = isHighRisk ? 'High Risk' : 'Medium Risk';
-  const riskColor = isHighRisk ? '#EF4444' : '#EF6C00'; 
-  const riskBgColor = isHighRisk ? '#FEE2E2' : '#FFF3E0';
-
-  useEffect(() => {
-    // Setting current date and time in a readable format
-    const now = new Date();
-    setCurrentDate(now.toLocaleString());
-  }, []);
 
   return (
     <View style={styles.container}>
@@ -204,7 +197,6 @@ export default function ResultScreen() {
               <Text style={[styles.riskBadgeText, { color: riskColor }]}>{riskText}</Text>
             </View>
           </View>
-          {/* Display the full disease name */}
           <Text style={[styles.conditionTitle, isHighRisk && { color: '#EF4444' }]}>
             {fullDiseaseName}
           </Text>
@@ -214,11 +206,9 @@ export default function ResultScreen() {
         <View style={styles.card}>
           <View style={styles.scoreRow}>
             <Text style={styles.cardLabel}>AI Confidence Score</Text>
-            {/* Display the confidence level */}
             <Text style={styles.scoreValue}>{formattedConfidence}</Text>
           </View>
           <View style={styles.progressBarBg}>
-            {/* Progress bar based on confidence level */}
             <View style={[styles.progressBarFill, { width: `${confidenceNumber}%` }]} />
           </View>
           <Text style={styles.scoreSub}>Model prediction confidence level</Text>
@@ -228,7 +218,6 @@ export default function ResultScreen() {
         <View style={styles.card}>
           <View style={styles.accuracyRow}>
              <View style={styles.circularProgress}>
-                {/* Display the actual confidence percentage */}
                 <Text style={styles.circularText}>{formattedConfidence}</Text>
              </View>
              <View style={styles.accuracyTextContent}>
@@ -263,24 +252,18 @@ export default function ResultScreen() {
 
         {/* 9. Action Buttons */}
         <View style={styles.buttonGroup}>
-          <View style={styles.rowButtons}>
-            <TouchableOpacity style={styles.outlineBtn} onPress={saveToHistory}>
-              <MaterialCommunityIcons name="content-save-outline" size={20} color="#1976D2" />
-              <Text style={styles.outlineBtnText}>Save</Text>
-            </TouchableOpacity>
-            
-            
-            <TouchableOpacity style={styles.outlineBtn} onPress={generateAndSharePDF}>
-              <MaterialCommunityIcons name="download-outline" size={20} color="#1976D2" />
-              <Text style={styles.outlineBtnText}>Report</Text>
-            </TouchableOpacity>
-          </View>
+          
+        
+          <TouchableOpacity style={styles.reportBtn} onPress={generateAndSharePDF}>
+            <MaterialCommunityIcons name="file-pdf-box" size={24} color="#1976D2" />
+            <Text style={styles.reportBtnText}>Download / Share Report</Text>
+          </TouchableOpacity>
 
-         
           <TouchableOpacity style={styles.secondaryBtn} onPress={() => router.push('/(user)/(tabs)')}>
             <MaterialCommunityIcons name="refresh" size={20} color="#1976D2" />
             <Text style={styles.secondaryBtnText}>Analyze Another</Text>
           </TouchableOpacity>
+          
         </View>
 
       </ScrollView>
@@ -332,12 +315,23 @@ const styles = StyleSheet.create({
   infoTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
   infoHeading: { fontSize: 16, fontWeight: 'bold', color: '#0F172A' },
   infoContent: { fontSize: 14, color: '#475569', lineHeight: 20 },
+  
   buttonGroup: { marginTop: 10, gap: 12, marginBottom: 40 },
-  rowButtons: { flexDirection: 'row', gap: 12 },
-  outlineBtn: { flex: 1, flexDirection: 'row', height: 50, borderWidth: 1.5, borderColor: '#1976D2', borderRadius: 12, justifyContent: 'center', alignItems: 'center', gap: 8 },
-  outlineBtnText: { color: '#1976D2', fontSize: 16, fontWeight: 'bold' },
-  primaryBtn: { flexDirection: 'row', height: 55, backgroundColor: '#1976D2', borderRadius: 12, justifyContent: 'center', alignItems: 'center', gap: 10 },
-  primaryBtnText: { color: 'white', fontSize: 16, fontWeight: 'bold' },
+  
+  // Report Button 
+  reportBtn: { 
+    flexDirection: 'row', 
+    height: 55, 
+    borderWidth: 1.5, 
+    borderColor: '#1976D2', 
+    backgroundColor: '#F0F7FF',
+    borderRadius: 12, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    gap: 10 
+  },
+  reportBtnText: { color: '#1976D2', fontSize: 16, fontWeight: 'bold' },
+  
   secondaryBtn: { flexDirection: 'row', height: 50, borderRadius: 12, justifyContent: 'center', alignItems: 'center', gap: 8 },
   secondaryBtnText: { color: '#1976D2', fontSize: 16, fontWeight: 'bold' }
 });
