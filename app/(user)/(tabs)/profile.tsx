@@ -264,8 +264,8 @@ export default function ProfileScreen() {
         />
           <MenuItem 
             icon="information-outline" 
-            title="About SkinCheck AI" 
-            subtitle="Version 1.0.2"
+            title="About MySkinApp" 
+            subtitle="Version 1.0"
             color="#64748B"
           />
         </View>
