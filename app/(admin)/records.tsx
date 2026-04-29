@@ -1,23 +1,23 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  ScrollView, 
-  TouchableOpacity, 
-  StatusBar, 
-  Platform,
-  Dimensions,
-  ActivityIndicator,
-  Alert
-} from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import Slider from '@react-native-community/slider';
+import { Picker } from '@react-native-picker/picker';
 import Constants from 'expo-constants';
-import { Picker } from '@react-native-picker/picker'; 
-import Slider from '@react-native-community/slider'; 
 import * as FileSystem from 'expo-file-system';
+import { useRouter } from 'expo-router';
 import * as Sharing from 'expo-sharing';
+import React, { useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Dimensions,
+  Platform,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
+} from 'react-native';
 
 const { width } = Dimensions.get('window');
 
@@ -169,7 +169,7 @@ export default function PredictionsRecordsScreen() {
               <Picker.Item label="All Diseases" value="All Diseases" />
               <Picker.Item label="Melanoma" value="Melanoma" />
               <Picker.Item label="Benign Keratosis" value="Benign Keratosis" />
-              <Picker.Item label="Melanocytic Nevus" value="Melanocytic Nevus" />
+              <Picker.Item label="Melanocytic Nevi" value="Melanocytic Nevi" />
               <Picker.Item label="Basal Cell Carcinoma" value="Basal Cell Carcinoma" />
               <Picker.Item label="Actinic Keratosis" value="Actinic Keratosis" />
               <Picker.Item label="Vascular Lesions" value="Vascular Lesions" />
