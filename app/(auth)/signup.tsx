@@ -53,7 +53,7 @@ export default function SignUpScreen() {
 
     try {
       
-      const BASE_URL = 'http://192.168.8.61:8000'; 
+      const BASE_URL = 'http://192.168.205.61:8000'; 
       
       const response = await fetch(`${BASE_URL}/auth/signup`, {
         method: 'POST',
