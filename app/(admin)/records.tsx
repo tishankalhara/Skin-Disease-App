@@ -6,6 +6,7 @@ import * as FileSystem from 'expo-file-system';
 import { useRouter } from 'expo-router';
 import * as Sharing from 'expo-sharing';
 import React, { useEffect, useState } from 'react';
+import { BASE_URL } from '../config';
 import {
   ActivityIndicator,
   Alert,
@@ -22,7 +23,7 @@ import {
 const { width } = Dimensions.get('window');
 
 
-const BACKEND_URL = 'http://192.168.8.61:8000/admin/records'; 
+const BACKEND_URL = `${BASE_URL}/admin/records`; 
 
 export default function PredictionsRecordsScreen() {
   const router = useRouter();
