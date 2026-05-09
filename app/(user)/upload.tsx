@@ -15,6 +15,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import Constants from 'expo-constants';
+import { BASE_URL } from '../config';
 
 export default function UploadPreviewScreen() {
   const router = useRouter();
@@ -70,7 +71,7 @@ export default function UploadPreviewScreen() {
       
       const filename = image.split('/').pop() || 'photo.jpg';
       
-      // 🚨 Extension එක හරියටම හදාගන්නවා (jpg ආවොත් jpeg කරනවා)
+      
       const match = /\.(\w+)$/.exec(filename);
       let fileType = match ? `image/${match[1].toLowerCase()}` : `image/jpeg`;
       if (fileType === 'image/jpg') fileType = 'image/jpeg';
@@ -82,13 +83,12 @@ export default function UploadPreviewScreen() {
       } as any);
 
       // 2. Call Python Backend 
-      const BACKEND_URL = 'http://192.168.8.61:8000/predict'; 
+      const BACKEND_URL = `${BASE_URL}/predict`; 
 
       const response = await fetch(BACKEND_URL, {
         method: 'POST',
         body: formData,
-        // 🚨 මෙන්න ලොකුම වෙනස! Content-Type එක අයින් කළා.
-        // එතකොට React Native එකෙන් ඔටෝ Boundary එකත් එක්කම ෆොටෝ එක යවනවා.
+        
         headers: {
           'Accept': 'application/json',
         },
