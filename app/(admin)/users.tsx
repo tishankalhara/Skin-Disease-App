@@ -1,25 +1,26 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  ScrollView, 
-  TouchableOpacity, 
-  TextInput, 
-  StatusBar, 
-  Platform,
-  Dimensions,
-  ActivityIndicator,
-  Alert 
-} from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
 import Constants from 'expo-constants';
+import { useRouter } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Dimensions,
+  Platform,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
+} from 'react-native';
+import { BASE_URL } from '../config';
 
 const { width } = Dimensions.get('window');
 
 
-const BACKEND_URL = 'http://192.168.8.61:8000/admin/users';
+const BACKEND_URL = `${BASE_URL}/admin/users`;
 
 export default function UserManagementScreen() {
   const router = useRouter();

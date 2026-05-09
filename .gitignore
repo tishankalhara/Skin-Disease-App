@@ -3,8 +3,9 @@
 # dependencies
 node_modules/
 backend/__pycache__/
-backend/best_model.keras
+backend/skin_disease_v2_80plus.h5
 *.env
+
 
 # Expo
 .expo/
@@ -38,6 +39,7 @@ yarn-error.*
 
 # typescript
 *.tsbuildinfo
+
 
 app-example
 

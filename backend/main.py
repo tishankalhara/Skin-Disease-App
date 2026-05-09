@@ -8,6 +8,10 @@ import tensorflow as tf
 import numpy as np
 from PIL import Image
 import io
+import cv2
+import smtplib
+from email.message import EmailMessage
+import random
 
 app = FastAPI()
 
@@ -22,24 +26,49 @@ app.add_middleware(
 
 # 1. AI Model Setup 
 try:
-    model = tf.keras.models.load_model("best_model.keras")
-    print("✅ AI Model loaded successfully!")
+    
+    model = tf.keras.models.load_model("skin_disease_v2_80plus.h5") 
+    print("AI Model loaded successfully!")
 except Exception as e:
-    print(f"❌ Error loading model: {e}")
+    print(f"Error loading model: {e}")
 
-class_names = ['akiec', 'bcc', 'bkl', 'mel', 'nv', 'vasc']
+class_names = ['akiec', 'bcc', 'bkl', 'mel', 'nv', 'vasc', 'normal']
 
 
 # 2. MongoDB Connection Setup
 MONGO_DETAILS = "mongodb://localhost:27017"
 client = AsyncIOMotorClient(MONGO_DETAILS)
 database = client.skin_app_database # Database Name
+
+# Email Settings for OTP sending
+SENDER_EMAIL = "tishanabeysinghe@gmail.com" 
+APP_PASSWORD = "rwfx iuke bhyy ezuh"  
+
+# Database Collections
+otp_collection = database.get_collection("otps")
 user_collection = database.get_collection("users") # Collection for users
 prediction_collection = database.get_collection("predictions") # Collection for AI records
-
-
 history_collection = database.get_collection("history") 
 
+
+# EMAIL SENDING FUNCTION
+
+def send_otp_email(receiver_email, otp):
+    msg = EmailMessage()
+    msg.set_content(f"Welcome to Skin Health App!\n\nYour Password Reset OTP is: {otp}\n\nPlease do not share this code with anyone.")
+    msg['Subject'] = 'Skin App - Password Reset OTP'
+    msg['From'] = SENDER_EMAIL
+    msg['To'] = receiver_email
+
+    try:
+        # SMTP server connection and email sending
+        server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
+        server.login(SENDER_EMAIL, APP_PASSWORD)
+        server.send_message(msg)
+        server.quit()
+        print(f"OTP sent successfully to {receiver_email}")
+    except Exception as e:
+        print(f"Email sending failed: {e}")
 
 # 3. Data Models for validation
 class SignupRequest(BaseModel):
@@ -50,6 +79,14 @@ class SignupRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: str
     password: str
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+class ResetPasswordRequest(BaseModel):
+    email: str
+    otp: str
+    new_password: str
 
 # History Record Model 
 class HistoryRecord(BaseModel):
@@ -92,6 +129,64 @@ async def login(credentials: LoginRequest):
     
     return {"role": user.get("role", "user")}
 
+# OTP sending endpoint 
+@app.post("/auth/forgot-password")
+async def forgot_password(request: ForgotPasswordRequest):
+    user = await user_collection.find_one({"email": request.email})
+    if not user:
+        raise HTTPException(status_code=404, detail="Email not found. Please check your email.")
+
+    import random
+    otp = str(random.randint(100000, 999999))
+
+    await otp_collection.update_one(
+        {"email": request.email},
+        {"$set": {"otp": otp}},
+        upsert=True
+    )
+
+    send_otp_email(request.email, otp)
+    return {"success": True, "message": "OTP sent successfully to your email"}
+
+# New Password make endpoint
+@app.post("/auth/reset-password")
+async def reset_password(request: ResetPasswordRequest):
+    record = await otp_collection.find_one({"email": request.email})
+    
+    if not record or record["otp"] != request.otp:
+        raise HTTPException(status_code=400, detail="Invalid OTP or OTP has expired")
+
+    await user_collection.update_one(
+        {"email": request.email},
+        {"$set": {"password": request.new_password}}
+    )
+
+    await otp_collection.delete_one({"email": request.email})
+    return {"success": True, "message": "Password reset successfully. You can now login."}
+
+
+# OpenCV Skin Detection Function 
+
+def is_skin_present(pil_image, min_percentage=10.0):
+
+    # PIL Image to OpenCV format (BGR)
+    open_cv_image = np.array(pil_image)
+    open_cv_image = open_cv_image[:, :, ::-1].copy()
+
+    hsv_image = cv2.cvtColor(open_cv_image, cv2.COLOR_BGR2HSV)
+
+    # HSV Range for skin color
+    lower_skin = np.array([0, 48, 80], dtype=np.uint8)
+    upper_skin = np.array([20, 255, 255], dtype=np.uint8)
+
+    skin_mask = cv2.inRange(hsv_image, lower_skin, upper_skin)
+
+    skin_pixels = cv2.countNonZero(skin_mask)
+    total_pixels = skin_mask.size
+    skin_percentage = (skin_pixels / total_pixels) * 100
+
+    return skin_percentage >= min_percentage, skin_percentage
+
 
 # 5. PREDICT ENDPOINT 
 @app.post("/predict")
@@ -100,22 +195,46 @@ async def predict_skin_disease(file: UploadFile = File(...)):
         contents = await file.read()
         image = Image.open(io.BytesIO(contents)).convert('RGB')
         
-        image = image.resize((224, 224))
+        
+        has_skin, skin_percentage = is_skin_present(image)
+        
+        
+        if not has_skin:
+            return {
+                "success": False,
+                "error": "Please upload a valid image of human skin.",
+                "details": f"Only {round(skin_percentage, 2)}% skin color detected."
+            }
+        
+        image = image.resize((300, 300))
         img_array = tf.keras.preprocessing.image.img_to_array(image)
+        img_array = img_array / 255.0 
+        
         img_array = np.expand_dims(img_array, axis=0)
 
         predictions = model.predict(img_array)
-        
         predicted_class_index = np.argmax(predictions[0])
         predicted_class = class_names[predicted_class_index]
-        confidence = round(100 * np.max(predictions[0]), 2)
+        
+        confidence = round(float(np.max(predictions[0])) * 100, 2)
 
-        return {
-            "success": True,
-            "prediction": predicted_class,
-            "confidence": f"{confidence}%",
-            "all_scores": {class_names[i]: float(predictions[0][i]) for i in range(len(class_names))}
-        }
+        if predicted_class == 'normal':
+            return {
+                "success": True,
+                "prediction": "Healthy Skin",
+                "message": "Good news! No signs of skin diseases detected. You have healthy skin.",
+                "confidence": f"{confidence}%",
+                "all_scores": {class_names[i]: float(predictions[0][i]) for i in range(len(class_names))}
+            }
+        
+        else:
+            return {
+                "success": True,
+                "prediction": predicted_class,
+                "message": "A potential skin condition was detected. Please consult a dermatologist.",
+                "confidence": f"{confidence}%",
+                "all_scores": {class_names[i]: float(predictions[0][i]) for i in range(len(class_names))}
+            }
 
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -160,10 +279,10 @@ async def delete_history(record_id: str):
 # 7. USER PROFILE 
 
 class UserUpdate(BaseModel):
-    full_name: str
+    name: str
     age: str = ""     
     gender: str = ""   
-    location: str = "" 
+    district: str = "" 
     profile_pic: str = None 
 
 # 7.1 Get User Profile (without password)
@@ -183,9 +302,9 @@ async def update_user_profile(email: str, update_data: UserUpdate):
     try:
         await user_collection.update_one(
             {"email": email},
-            {"$set": {"full_name": update_data.full_name,"age": update_data.age,
+            {"$set": {"name": update_data.name,"age": update_data.age,
                 "gender": update_data.gender,
-                "location": update_data.location, "profile_pic": update_data.profile_pic}}
+                "district": update_data.district, "profile_pic": update_data.profile_pic}}
         )
         return {"success": True, "message": "Profile updated"}
     except Exception as e:
@@ -201,7 +320,6 @@ async def delete_user_account(email: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
-    from datetime import datetime
 
 # 8. ADMIN DASHBOARD ENDPOINTS
 
@@ -342,3 +460,18 @@ async def get_all_records():
         return {"success": True, "records": sorted_records}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+# 12. DOCTORS ENDPOINT
+@app.get("/doctors/{district}")
+async def get_doctors_by_district(district: str):
+    try:
+        # Case insensitive search for doctors in the specified district
+        cursor = database.get_collection("doctors").find({"district": {"$regex": district, "$options": "i"}})
+        doctors = await cursor.to_list(length=100)
+        
+        for doc in doctors:
+            doc["_id"] = str(doc["_id"]) 
+            
+        return {"success": True, "doctors": doctors}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))    

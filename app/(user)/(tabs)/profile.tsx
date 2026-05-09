@@ -1,28 +1,36 @@
-import React, { useState, useCallback } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  ScrollView, 
-  TouchableOpacity, 
-  StatusBar, 
-  Platform,
-  Image,
-  Switch,
-  Alert,
-  Modal,
-  TextInput,
-  ActivityIndicator
-} from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter, useFocusEffect } from 'expo-router';
-import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
 import * as ImagePicker from 'expo-image-picker';
-import { useAuth } from '../../_layout'; 
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useCallback, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  Modal,
+  Platform,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
+} from 'react-native';
+import { useAuth } from '../../_layout';
+import { BASE_URL } from '../../config';
 
 
-const BACKEND_BASE_URL = 'http://192.168.8.61:8000'; 
+const BACKEND_BASE_URL = BASE_URL; 
+
+const districtsList = [
+  'Ampara', 'Anuradhapura', 'Badulla', 'Batticaloa', 'Colombo', 'Galle', 'Gampaha',
+  'Hambantota', 'Jaffna', 'Kalutara', 'Kandy', 'Kegalle', 'Kilinochchi', 'Kurunegala',
+  'Mannar', 'Matale', 'Matara', 'Moneragala', 'Mullaitivu', 'Nuwara Eliya', 'Polonnaruwa',
+  'Puttalam', 'Ratnapura', 'Trincomalee', 'Vavuniya'
+];
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -39,8 +47,9 @@ export default function ProfileScreen() {
   const [isTermsModalVisible, setTermsModalVisible] = useState(false);
   const [editAgeInput, setEditAgeInput] = useState('');   
   const [editGenderInput, setEditGenderInput] = useState(''); 
-  const [editLocationInput, setEditLocationInput] = useState(''); 
+  const [editdistrictInput, setEditdistrictInput] = useState(''); 
   const [isSecurityModalVisible, setSecurityModalVisible] = useState(false);
+  const [isDistrictModalVisible, setDistrictModalVisible] = useState(false);
   const [editNameInput, setEditNameInput] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -75,11 +84,11 @@ export default function ProfileScreen() {
       const data = await response.json();
       
       if (response.ok) {
-        setUserName(data.full_name || 'User');
-        setEditNameInput(data.full_name || 'User');
+        setUserName(data.name || 'User');
+        setEditNameInput(data.name || 'User');
         setEditAgeInput(data.age || '');
         setEditGenderInput(data.gender || '');
-        setEditLocationInput(data.location || '');
+        setEditdistrictInput(data.district || '');
 
         if (data.profile_pic) {
           setProfilePic(data.profile_pic);
@@ -92,7 +101,7 @@ export default function ProfileScreen() {
     }
   };
 
-  // --- UPDATE PROFILE (PIC & NAME) ---
+  //  UPDATE PROFILE (PIC & NAME) 
   const pickImage = async () => {
     let result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -112,23 +121,38 @@ export default function ProfileScreen() {
   const saveProfileChanges = async (newName: string, newPic: string | null) => {
     try {
       setSaving(true);
-      await fetch(`${BACKEND_BASE_URL}/user/${userEmail}`, {
+      
+      
+      const updateData = { 
+        name: newName || "", 
+        profile_pic: newPic || "", 
+        age: editAgeInput ? editAgeInput.toString() : "", 
+        gender: editGenderInput || "", 
+        district: editdistrictInput || "" 
+      };
+
+      const response = await fetch(`${BACKEND_BASE_URL}/user/${userEmail}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ full_name: newName, profile_pic: newPic, age: editAgeInput, 
-          gender: editGenderInput, 
-          location: editLocationInput })
+        body: JSON.stringify(updateData)
       });
+
+      if (!response.ok) {
+        throw new Error('Failed to update');
+      }
+
       setUserName(newName);
       setEditModalVisible(false);
+      Alert.alert("Success", "Profile updated successfully!");
     } catch (error) {
+      console.error(error);
       Alert.alert("Error", "Could not update profile.");
     } finally {
       setSaving(false);
     }
   };
 
-  // --- DELETE ACCOUNT ---
+  // DELETE ACCOUNT
   const handleDeleteAccount = () => {
     Alert.alert("WARNING!", "This will permanently delete your account and all history. Continue?", [
       { text: "Cancel", style: "cancel" },
@@ -285,7 +309,7 @@ export default function ProfileScreen() {
             <Text style={[styles.modalTitle, { color: themeText }]}>Edit Profile</Text>
 
             <ScrollView showsVerticalScrollIndicator={false}>
-             <Text style={[styles.inputLabel, { color: themeSubText }]}>Full Name</Text>
+             <Text style={[styles.inputLabel, { color: themeSubText }]}>Name</Text>
             <TextInput 
               style={[styles.textInput, { backgroundColor: themeContainer, color: themeText, borderColor: themeBorder }]}
               value={editNameInput}
@@ -312,14 +336,16 @@ export default function ProfileScreen() {
                 placeholderTextColor={themeSubText}
               />
 
-              <Text style={[styles.inputLabel, { color: themeSubText }]}>Location (City)</Text>
-              <TextInput 
-                style={[styles.textInput, { backgroundColor: themeContainer, color: themeText, borderColor: themeBorder, marginBottom: 20 }]}
-                value={editLocationInput}
-                onChangeText={setEditLocationInput}
-                placeholder="e.g. Colombo"
-                placeholderTextColor={themeSubText}
-              />
+              <Text style={[styles.inputLabel, { color: themeSubText }]}>District</Text>
+               <TouchableOpacity 
+                style={[styles.textInput, { backgroundColor: themeContainer, borderColor: themeBorder, justifyContent: 'center', marginBottom: 25 }]}
+                  onPress={() => setDistrictModalVisible(true)}
+>
+              <Text style={{ color: editdistrictInput ? themeText : themeSubText, fontSize: 16 }}>
+               {editdistrictInput || "Select your district"}
+              </Text>
+              <MaterialCommunityIcons name="chevron-down" size={24} color={themeSubText} style={{ position: 'absolute', right: 15 }} />
+               </TouchableOpacity>
             </ScrollView>
 
             <TouchableOpacity 
@@ -391,7 +417,7 @@ export default function ProfileScreen() {
         </View>
       </Modal>
 
-{/* --- HELP CENTER MODAL --- */}
+{/* HELP CENTER MODAL */}
       <Modal visible={isHelpModalVisible} animationType="slide" transparent={true}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContainer, { backgroundColor: themeCard, height: '70%' }]}>
@@ -415,7 +441,7 @@ export default function ProfileScreen() {
         </View>
       </Modal>
 
-      {/* --- TERMS & CONDITIONS MODAL --- */}
+      {/* TERMS & CONDITIONS MODAL */}
       <Modal visible={isTermsModalVisible} animationType="slide" transparent={true}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContainer, { backgroundColor: themeCard, height: '70%' }]}>
@@ -435,6 +461,44 @@ export default function ProfileScreen() {
             <TouchableOpacity style={styles.saveBtn} onPress={() => setTermsModalVisible(false)}>
               <Text style={styles.saveBtnText}>I Agree & Close</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* DISTRICT SELECTOR MODAL*/}
+      <Modal visible={isDistrictModalVisible} animationType="fade" transparent={true}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContainer, { backgroundColor: themeCard, height: '70%' }]}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
+              <Text style={[styles.modalTitle, { color: themeText, marginBottom: 0 }]}>Select District</Text>
+              <TouchableOpacity onPress={() => setDistrictModalVisible(false)}>
+                <MaterialCommunityIcons name="close-circle" size={28} color={themeSubText} />
+              </TouchableOpacity>
+            </View>
+            
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {districtsList.map((district) => (
+                <TouchableOpacity
+                  key={district}
+                  style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: themeBorder }}
+                  onPress={() => {
+                    setEditdistrictInput(district);
+                    setDistrictModalVisible(false); 
+                  }}
+                >
+                  <Text style={{ 
+                    fontSize: 16, 
+                    color: editdistrictInput === district ? '#1976D2' : themeText,
+                    fontWeight: editdistrictInput === district ? 'bold' : 'normal'
+                  }}>
+                    {district}
+                  </Text>
+                  {editdistrictInput === district && (
+                    <MaterialCommunityIcons name="check-circle" size={20} color="#1976D2" />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
           </View>
         </View>
       </Modal>
