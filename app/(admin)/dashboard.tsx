@@ -2,13 +2,14 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Dimensions, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { PieChart } from "react-native-gifted-charts";
 import { useAuth } from '../_layout';
-import { PieChart } from "react-native-gifted-charts"; 
+import { BASE_URL } from '../config';
 
 const { width } = Dimensions.get('window');
 
 
-const BACKEND_URL = 'http://192.168.8.61:8000/admin/dashboard'; 
+const BACKEND_URL = `${BASE_URL}/admin/dashboard`; 
 
 export default function AdminDashboard() {
   const router = useRouter();
