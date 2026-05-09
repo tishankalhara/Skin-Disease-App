@@ -1,13 +1,15 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import * as Print from 'expo-print';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Sharing from 'expo-sharing';
 import React, { useEffect, useState } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
+  ActivityIndicator,
   Alert, Dimensions,
   Image,
+  Linking,
   Platform,
   ScrollView,
   StatusBar,
@@ -16,6 +18,7 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
+import { BASE_URL } from '../config';
 
 const { width } = Dimensions.get('window');
 
@@ -29,11 +32,25 @@ const diseaseNames: Record<string, string> = {
   'vasc': 'Vascular Lesions'
 };
 
+// 2. Doctor type definition
+type Doctor = {
+  name: string;
+  specialization: string;
+  hospital: string;
+  district: string;
+  contact: string;
+};
+
 export default function ResultScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   
   const [currentDate, setCurrentDate] = useState('');
+  
+  // State Variables (Doctors Section)
+  const [doctors, setDoctors] = useState<Doctor[]>([]);
+  const [userDistrict, setUserDistrict] = useState<string>('Loading...');
+  const [loadingDoctors, setLoadingDoctors] = useState(true);
 
   // 2. Data extraction from route params
   const imageUri = params.imageUri as string;
@@ -51,18 +68,18 @@ export default function ResultScreen() {
   const riskColor = isHighRisk ? '#EF4444' : '#EF6C00'; 
   const riskBgColor = isHighRisk ? '#FEE2E2' : '#FFF3E0';
 
-  // Auto save to history on page load
   
   useEffect(() => {
     const now = new Date();
     const dateString = now.toLocaleString();
     setCurrentDate(dateString);
 
-    const autoSaveToHistory = async () => {
+    const processInitialData = async () => {
       try {
         const userEmail = await AsyncStorage.getItem('userEmail'); 
         if (!userEmail) return; 
 
+        //  1. Auto Save History 
         const newRecord = {
           id: Date.now().toString(),
           user_email: userEmail, 
@@ -73,26 +90,43 @@ export default function ResultScreen() {
           timestamp: Date.now()
         };
         
-       
-        const BACKEND_URL = 'http://192.168.8.61:8000/history/save'; 
-        
-        await fetch(BACKEND_URL, {
+        fetch(`${BASE_URL}/history/save`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(newRecord)
-        });
+        }).catch(err => console.error("Auto-save failed:", err));
+
+        //  2. Fetch User Profile to get District 
+        const profileRes = await fetch(`${BASE_URL}/user/${userEmail}`);
+        const profileData = await profileRes.json();
         
+        const district = (profileData.district || 'Colombo').trim(); 
         
-        console.log("Auto-saved to history successfully!");
+        console.log("Fetching doctors for district:", district); 
+        setUserDistrict(district);
+
+        //  3. Fetch Doctors by District 
+        const docRes = await fetch(`${BASE_URL}/doctors/${district}`);
+        const docData = await docRes.json();
+        
+        if (docData.success && docData.doctors) {
+          setDoctors(docData.doctors);
+        }
 
       } catch (error) {
-        console.error("Auto-save failed:", error);
+        console.error("Error fetching data:", error);
+      } finally {
+        setLoadingDoctors(false);
       }
     };
 
-    autoSaveToHistory();
+    processInitialData();
   }, []); 
 
+  // Call Doctor Function
+  const makePhoneCall = (phoneNumber: string) => {
+    Linking.openURL(`tel:${phoneNumber}`);
+  };
 
   // PDF generation and sharing function
   const generateAndSharePDF = async () => {
@@ -123,11 +157,6 @@ export default function ResultScreen() {
                 <td style="padding: 10px 0; border-bottom: 1px solid #eee; text-align: right; font-weight: bold; color: #1976D2;">${formattedConfidence}</td>
               </tr>
             </table>
-
-            <div style="background-color: #F8FAFC; padding: 20px; border-radius: 8px; border-left: 4px solid #1976D2;">
-              <h3 style="margin-top: 0; color: #0F172A;">What to do next</h3>
-              <p style="line-height: 1.5; color: #475569;">Based on this screening, we recommend consulting a dermatologist for professional evaluation. Monitor the area and consult a healthcare provider within 1-2 weeks.</p>
-            </div>
 
             <div style="margin-top: 30px; padding: 15px; border: 1px solid #EF6C00; border-radius: 8px; background-color: #FFF3E0;">
               <p style="margin: 0; color: #EF6C00; font-size: 14px; text-align: center;">
@@ -227,20 +256,44 @@ export default function ResultScreen() {
           </View>
         </View>
 
-        {/* 7. What to do next Card */}
-        <View style={styles.card}>
+        {/* 7.Doctors Recommendations Section */}
+        <View style={styles.specialistSection}>
           <View style={styles.infoTitleRow}>
-            <MaterialCommunityIcons name="information-outline" size={20} color="#1976D2" />
-            <Text style={styles.infoHeading}>What to do next</Text>
+            <MaterialCommunityIcons name="stethoscope" size={24} color="#1976D2" />
+            <Text style={styles.infoHeading}>Specialists in {userDistrict}</Text>
           </View>
-          <Text style={styles.infoContent}>
-            Based on this screening, we recommend consulting a dermatologist for professional evaluation.{"\n\n"}
-            Monitor the area and consult a healthcare provider within 1-2 weeks.
-          </Text>
+
+          {loadingDoctors ? (
+            <ActivityIndicator size="small" color="#1976D2" style={{ marginTop: 15 }} />
+          ) : doctors.length > 0 ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.doctorScroll}>
+              {doctors.map((doc, index) => (
+                <View key={index} style={styles.doctorCard}>
+                  <View style={styles.docAvatar}>
+                    <MaterialCommunityIcons name="doctor" size={32} color="#1976D2" />
+                  </View>
+                  <Text style={styles.docName} numberOfLines={1}>{doc.name}</Text>
+                  <Text style={styles.docSpec}>{doc.specialization}</Text>
+                  <Text style={styles.docHosp} numberOfLines={1}>{doc.hospital}</Text>
+                  
+                  <TouchableOpacity style={styles.callBtn} onPress={() => makePhoneCall(doc.contact)}>
+                    <MaterialCommunityIcons name="phone" size={16} color="white" />
+                    <Text style={styles.callBtnText}>Call Now</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </ScrollView>
+          ) : (
+            <View style={styles.noDocCard}>
+              <Text style={{color: '#64748B', textAlign: 'center'}}>
+                We couldn't find specialists in {userDistrict}. Please visit your nearest general hospital.
+              </Text>
+            </View>
+          )}
         </View>
 
         {/* 8. Important Disclaimer Card */}
-        <View style={[styles.card, { borderColor: '#E2E8F0' }]}>
+        <View style={[styles.card, { borderColor: '#E2E8F0', marginTop: 10 }]}>
           <View style={styles.infoTitleRow}>
             <MaterialCommunityIcons name="alert-circle-outline" size={20} color="#EF6C00" />
             <Text style={styles.infoHeading}>Important Disclaimer</Text>
@@ -252,8 +305,6 @@ export default function ResultScreen() {
 
         {/* 9. Action Buttons */}
         <View style={styles.buttonGroup}>
-          
-        
           <TouchableOpacity style={styles.reportBtn} onPress={generateAndSharePDF}>
             <MaterialCommunityIcons name="file-pdf-box" size={24} color="#1976D2" />
             <Text style={styles.reportBtnText}>Download / Share Report</Text>
@@ -263,7 +314,6 @@ export default function ResultScreen() {
             <MaterialCommunityIcons name="refresh" size={20} color="#1976D2" />
             <Text style={styles.secondaryBtnText}>Analyze Another</Text>
           </TouchableOpacity>
-          
         </View>
 
       </ScrollView>
@@ -313,25 +363,31 @@ const styles = StyleSheet.create({
   accuracyTitle: { fontSize: 16, fontWeight: 'bold', color: '#0F172A' },
   accuracyDesc: { fontSize: 12, color: '#64748B', marginTop: 2 },
   infoTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
-  infoHeading: { fontSize: 16, fontWeight: 'bold', color: '#0F172A' },
+  infoHeading: { fontSize: 18, fontWeight: 'bold', color: '#0F172A' },
   infoContent: { fontSize: 14, color: '#475569', lineHeight: 20 },
   
-  buttonGroup: { marginTop: 10, gap: 12, marginBottom: 40 },
-  
-  // Report Button 
+  // 🚨 අලුත් Styles (Doctors Section එකට) 🚨
+  specialistSection: { marginTop: 10, marginBottom: 10 },
+  doctorScroll: { marginTop: 10, paddingBottom: 10 },
+  doctorCard: {
+    backgroundColor: '#F8FAFC', padding: 15, borderRadius: 16, marginRight: 15,
+    width: width * 0.65, borderWidth: 1, borderColor: '#E2E8F0',
+    alignItems: 'center', elevation: 1
+  },
+  docAvatar: { width: 56, height: 56, borderRadius: 28, backgroundColor: '#E0F2FE', justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
+  docName: { fontSize: 16, fontWeight: 'bold', color: '#0F172A', textAlign: 'center' },
+  docSpec: { fontSize: 13, color: '#1976D2', marginBottom: 4, textAlign: 'center', fontWeight: '500' },
+  docHosp: { fontSize: 12, color: '#64748B', marginBottom: 15, textAlign: 'center' },
+  callBtn: { flexDirection: 'row', backgroundColor: '#1976D2', paddingVertical: 10, paddingHorizontal: 20, borderRadius: 25, alignItems: 'center', gap: 6, width: '100%', justifyContent: 'center' },
+  callBtnText: { color: 'white', fontSize: 14, fontWeight: 'bold' },
+  noDocCard: { padding: 20, backgroundColor: '#F8FAFC', borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', marginTop: 10 },
+
+  buttonGroup: { marginTop: 15, gap: 12, marginBottom: 40 },
   reportBtn: { 
-    flexDirection: 'row', 
-    height: 55, 
-    borderWidth: 1.5, 
-    borderColor: '#1976D2', 
-    backgroundColor: '#F0F7FF',
-    borderRadius: 12, 
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    gap: 10 
+    flexDirection: 'row', height: 55, borderWidth: 1.5, borderColor: '#1976D2', backgroundColor: '#F0F7FF',
+    borderRadius: 12, justifyContent: 'center', alignItems: 'center', gap: 10 
   },
   reportBtnText: { color: '#1976D2', fontSize: 16, fontWeight: 'bold' },
-  
   secondaryBtn: { flexDirection: 'row', height: 50, borderRadius: 12, justifyContent: 'center', alignItems: 'center', gap: 8 },
   secondaryBtnText: { color: '#1976D2', fontSize: 16, fontWeight: 'bold' }
 });
